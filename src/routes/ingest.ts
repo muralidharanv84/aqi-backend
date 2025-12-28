@@ -1,5 +1,5 @@
 import type { Env } from "../env";
-import { hmacSha256Hex, timingSafeEqual } from "../utils/crypto";
+import { verifyDeviceRequest } from "../utils/auth";
 import { parseMetrics } from "../utils/metrics";
 import { minuteBucketTimestamp } from "../utils/time";
 
@@ -25,10 +25,6 @@ const INSERT_SAMPLE_SQL = `
     rh_pct = excluded.rh_pct
 `;
 
-function unauthorized(): Response {
-  return Response.json({ ok: false }, { status: 401 });
-}
-
 function badRequest(message: string): Response {
   return Response.json({ ok: false, error: message }, { status: 400 });
 }
@@ -38,24 +34,9 @@ export async function handleIngest(req: Request, env: Env): Promise<Response> {
     return Response.json({ ok: false }, { status: 405 });
   }
 
-  const deviceId = req.headers.get("X-Device-Id");
-  const signature = req.headers.get("X-Signature");
-
-  if (!deviceId || !signature) return unauthorized();
-
-  const rawBody = await req.text();
-
-  const secretRow = await env.DB
-    .prepare("SELECT secret_hash FROM devices WHERE device_id = ?")
-    .bind(deviceId)
-    .first<{ secret_hash: string }>();
-
-  if (!secretRow?.secret_hash) return unauthorized();
-
-  const expectedSig = await hmacSha256Hex(secretRow.secret_hash, rawBody);
-  if (!timingSafeEqual(signature.toLowerCase(), expectedSig)) {
-    return unauthorized();
-  }
+  const auth = await verifyDeviceRequest(req, env);
+  if (!auth.ok) return auth.response;
+  const { deviceId, body: rawBody } = auth;
 
   let payload: unknown;
   try {
