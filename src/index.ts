@@ -37,13 +37,20 @@ export default {
 };
 
 export async function handleRequest(req: Request, env: Env): Promise<Response> {
-	// Preflight
-	if (req.method === "OPTIONS") {
-		const origin = req.headers.get("Origin");
-		return new Response(null, { status: 204, headers: corsHeaders(origin) });
-	}
+  // Preflight
+  if (req.method === "OPTIONS") {
+    const origin = req.headers.get("Origin");
+    return new Response(null, { status: 204, headers: corsHeaders(origin) });
+  }
 
-	// Example route (your current DB ping)
-	const row = await env.DB.prepare("SELECT 1 AS ok, datetime('now') AS now").first();
-	return withCors(req, Response.json(row));
+  const url = new URL(req.url);
+
+  if (req.method === "GET" && url.pathname === "/api/v1/health") {
+    const headers = new Headers({ "Cache-Control": "no-store" });
+    return withCors(req, Response.json({ ok: true }, { headers }));
+  }
+
+  // Example route (your current DB ping)
+  const row = await env.DB.prepare("SELECT 1 AS ok, datetime('now') AS now").first();
+  return withCors(req, Response.json(row));
 }

@@ -263,6 +263,20 @@ Hourly example:
 ```
 ---
 
+### 5.5 Health Check
+
+GET `/api/v1/health`
+
+```json
+    {
+      "ok": true
+    }
+```
+
+Notes:
+- Fast, no-DB request for uptime checks and load balancers
+---
+
 ## 6. Aggregation & Retention
 
 Aggregation:
