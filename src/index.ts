@@ -1,4 +1,5 @@
 import type { Env } from "./env";
+import { aggregateCompletedHours } from "./cron/aggregate";
 import { handleHealth } from "./routes/health";
 import { handleIngest } from "./routes/ingest";
 import { handleLatest } from "./routes/latest";
@@ -8,6 +9,9 @@ import { corsHeaders, withCors } from "./utils/cors";
 
 export default {
   fetch: (req: Request, env: Env) => handleRequest(req, env),
+  scheduled: (_event: ScheduledController, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(aggregateCompletedHours(env));
+  },
 };
 
 export async function handleRequest(req: Request, env: Env): Promise<Response> {
