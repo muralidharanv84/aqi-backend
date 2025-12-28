@@ -3,6 +3,7 @@ import { handleHealth } from "./routes/health";
 import { handleIngest } from "./routes/ingest";
 import { handleLatest } from "./routes/latest";
 import { handlePing } from "./routes/ping";
+import { handleSeries } from "./routes/series";
 import { corsHeaders, withCors } from "./utils/cors";
 
 export default {
@@ -32,6 +33,14 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
   if (latestMatch) {
     const deviceId = decodeURIComponent(latestMatch[1]);
     return withCors(req, await handleLatest(req, env, deviceId));
+  }
+
+  const seriesMatch = url.pathname.match(
+    /^\/api\/v1\/devices\/([^/]+)\/series$/,
+  );
+  if (seriesMatch) {
+    const deviceId = decodeURIComponent(seriesMatch[1]);
+    return withCors(req, await handleSeries(req, env, deviceId, url));
   }
 
   if (req.method === "GET" && url.pathname === "/") {
