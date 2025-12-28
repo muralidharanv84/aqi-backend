@@ -3,6 +3,7 @@ import { METRIC_FIELDS, type MetricField } from "./metrics";
 export type SeriesResolution = "raw" | "1h";
 
 const ALLOWED_RESOLUTIONS = new Set<SeriesResolution>(["raw", "1h"]);
+const MAX_RAW_RANGE_SECONDS = 14 * 24 * 60 * 60;
 
 const METRIC_SET = new Set<string>(METRIC_FIELDS);
 
@@ -46,6 +47,10 @@ export function parseSeriesQuery(url: URL): {
     return { error: "Invalid time bounds" };
   }
   if (from > to) return { error: "Invalid time bounds" };
+
+  if (resolution === "raw" && to - from > MAX_RAW_RANGE_SECONDS) {
+    return { error: "Raw range too large" };
+  }
 
   return {
     metric: metric as MetricField,

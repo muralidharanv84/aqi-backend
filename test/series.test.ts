@@ -73,6 +73,14 @@ describe("series endpoint", () => {
     ]);
   });
 
+  it("rejects raw ranges greater than two weeks", async () => {
+    const res = await SELF.fetch(
+      "https://example.com/api/v1/devices/device-a/series?metric=pm25_ugm3&from=0&to=1209601&resolution=raw",
+    );
+
+    expect(res.status).toBe(400);
+  });
+
   it("returns hourly rollups for a metric", async () => {
     const deviceId = "device-hourly";
     await insertDevice(env.DB, deviceId, "secret");

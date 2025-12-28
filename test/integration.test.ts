@@ -83,7 +83,7 @@ describe("ingest + latest + series + aggregation integration", () => {
     expect(latest.metrics).toEqual({ pm25_ugm3: 13.1, co2_ppm: 705 });
 
     const seriesRes = await SELF.fetch(
-      `https://example.com/api/v1/devices/${deviceId}/series?metric=pm25_ugm3&from=0&to=2000000000&resolution=raw`,
+      `https://example.com/api/v1/devices/${deviceId}/series?metric=pm25_ugm3&from=1699999000&to=1700001000&resolution=raw`,
     );
     expect(seriesRes.status).toBe(200);
     const series = (await seriesRes.json()) as RawSeries;
