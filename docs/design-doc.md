@@ -40,13 +40,13 @@ Device → HTTP → Frontend (Cloudflare Pages)
 ## 4. Data Model (D1 Schema)
 
 ### 4.1 Devices
-
+```sql
     CREATE TABLE IF NOT EXISTS devices (
       device_id     TEXT PRIMARY KEY,
       secret_hash   TEXT NOT NULL,
       timezone      TEXT NOT NULL
     );
-
+```
 - `device_id`: stable identifier embedded in firmware  
 - `secret_hash`: hashed shared secret  
 - `timezone`: IANA timezone string (display only)
