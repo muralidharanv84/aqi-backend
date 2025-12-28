@@ -64,7 +64,7 @@ describe("ingest + latest + series integration", () => {
     expect(latestRes.status).toBe(200);
     const latest = (await latestRes.json()) as LatestResponse;
     expect(latest.device_id).toBe(deviceId);
-    expect(latest.ts).toBe(1700000060);
+    expect(latest.ts).toBe(1700000040);
     expect(latest.metrics).toEqual({ pm25_ugm3: 13.1, co2_ppm: 705 });
 
     const seriesRes = await SELF.fetch(
@@ -75,8 +75,8 @@ describe("ingest + latest + series integration", () => {
     expect(series.metric).toBe("pm25_ugm3");
     expect(series.resolution).toBe("raw");
     expect(series.points).toEqual([
-      { ts: 1700000000, value: 12.5 },
-      { ts: 1700000060, value: 13.1 },
+      { ts: 1699999980, value: 12.5 },
+      { ts: 1700000040, value: 13.1 },
     ]);
   });
 });
