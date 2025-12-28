@@ -1,41 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { env, SELF } from "cloudflare:test";
-
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS devices (
-    device_id     TEXT PRIMARY KEY,
-    secret_hash   TEXT NOT NULL,
-    timezone      TEXT NOT NULL
-  );`,
-  `CREATE TABLE IF NOT EXISTS samples_raw (
-    device_id     TEXT NOT NULL,
-    ts            INTEGER NOT NULL,
-    pm25_ugm3     REAL,
-    aqi_us        INTEGER,
-    co2_ppm       REAL,
-    voc_ppm       REAL,
-    voc_index     REAL,
-    temp_c        REAL,
-    rh_pct        REAL,
-    PRIMARY KEY (device_id, ts),
-    FOREIGN KEY (device_id) REFERENCES devices(device_id)
-  );`,
-];
-
-async function setupSchema() {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await env.DB.prepare(stmt).run();
-  }
-  await env.DB.prepare("DELETE FROM samples_raw").run();
-  await env.DB.prepare("DELETE FROM devices").run();
-}
-
-async function insertDevice(deviceId: string, secret: string) {
-  await env.DB
-    .prepare("INSERT INTO devices (device_id, secret_hash, timezone) VALUES (?, ?, ?)")
-    .bind(deviceId, secret, "UTC")
-    .run();
-}
+import { insertDevice, resetDb } from "./utils/db";
 
 async function signBody(secret: string, body: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -55,7 +20,7 @@ async function signBody(secret: string, body: string): Promise<string> {
 
 describe("ingest endpoint", () => {
   beforeEach(async () => {
-    await setupSchema();
+    await resetDb(env.DB);
   });
 
   it("rejects missing auth headers", async () => {
@@ -70,7 +35,7 @@ describe("ingest endpoint", () => {
   it("rejects unknown fields", async () => {
     const deviceId = "device-1";
     const secret = "secret-1";
-    await insertDevice(deviceId, secret);
+    await insertDevice(env.DB, deviceId, secret);
 
     const body = JSON.stringify({ nope: 1 });
     const signature = await signBody(secret, body);
@@ -91,7 +56,7 @@ describe("ingest endpoint", () => {
   it("rejects invalid signature", async () => {
     const deviceId = "device-4";
     const secret = "secret-4";
-    await insertDevice(deviceId, secret);
+    await insertDevice(env.DB, deviceId, secret);
 
     const body = JSON.stringify({ pm25_ugm3: 12.3 });
     const res = await SELF.fetch("https://example.com/api/v1/ingest", {
@@ -110,7 +75,7 @@ describe("ingest endpoint", () => {
   it("requires at least one metric", async () => {
     const deviceId = "device-2";
     const secret = "secret-2";
-    await insertDevice(deviceId, secret);
+    await insertDevice(env.DB, deviceId, secret);
 
     const body = JSON.stringify({});
     const signature = await signBody(secret, body);
@@ -131,7 +96,7 @@ describe("ingest endpoint", () => {
   it("stores a valid sample", async () => {
     const deviceId = "device-3";
     const secret = "secret-3";
-    await insertDevice(deviceId, secret);
+    await insertDevice(env.DB, deviceId, secret);
 
     const body = JSON.stringify({ pm25_ugm3: 18.2, aqi_us: 63 });
     const signature = await signBody(secret, body);

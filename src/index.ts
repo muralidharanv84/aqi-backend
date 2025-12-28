@@ -1,6 +1,7 @@
 import type { Env } from "./env";
 import { handleHealth } from "./routes/health";
 import { handleIngest } from "./routes/ingest";
+import { handleLatest } from "./routes/latest";
 import { handlePing } from "./routes/ping";
 import { corsHeaders, withCors } from "./utils/cors";
 
@@ -23,6 +24,14 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/v1/ingest") {
     return withCors(req, await handleIngest(req, env));
+  }
+
+  const latestMatch = url.pathname.match(
+    /^\/api\/v1\/devices\/([^/]+)\/latest$/,
+  );
+  if (latestMatch) {
+    const deviceId = decodeURIComponent(latestMatch[1]);
+    return withCors(req, await handleLatest(req, env, deviceId));
   }
 
   if (req.method === "GET" && url.pathname === "/") {
