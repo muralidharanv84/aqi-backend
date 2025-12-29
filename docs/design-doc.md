@@ -277,6 +277,22 @@ Notes:
 - Fast, no-DB request for uptime checks and load balancers
 ---
 
+### 5.6 Device List
+
+GET `/api/v1/devices`
+
+```json
+    {
+      "devices": [
+        { "device_id": "tinys3-livingroom-01", "timezone": "Asia/Kolkata" },
+        { "device_id": "tinys3-bedroom-01", "timezone": "UTC" }
+      ]
+    }
+```
+
+Notes:
+- Returns known devices for frontend selection
+
 ## 6. Aggregation & Retention
 
 Aggregation:

@@ -5,6 +5,7 @@ import { handleIngest } from "./routes/ingest";
 import { handleLatest } from "./routes/latest";
 import { handlePing } from "./routes/ping";
 import { handleSeries } from "./routes/series";
+import { handleDevices } from "./routes/devices";
 import { corsHeaders, withCors } from "./utils/cors";
 
 export default {
@@ -29,6 +30,10 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/v1/ingest") {
     return withCors(req, await handleIngest(req, env));
+  }
+
+  if (url.pathname === "/api/v1/devices") {
+    return withCors(req, await handleDevices(req, env));
   }
 
   const latestMatch = url.pathname.match(
