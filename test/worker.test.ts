@@ -23,6 +23,30 @@ describe("AQI backend worker", () => {
     expect(res.headers.get("Vary")).toBe("Origin");
   });
 
+  it("adds CORS headers for Cloudflare Pages origins", async () => {
+    const baseRes = await SELF.fetch("https://example.com/api/v1/health", {
+      headers: { Origin: "https://aqi-web.pages.dev" },
+    });
+
+    expect(baseRes.headers.get("Access-Control-Allow-Origin"))
+      .toBe("https://aqi-web.pages.dev");
+
+    const previewRes = await SELF.fetch("https://example.com/api/v1/health", {
+      headers: { Origin: "https://preview-123.aqi-web.pages.dev" },
+    });
+
+    expect(previewRes.headers.get("Access-Control-Allow-Origin"))
+      .toBe("https://preview-123.aqi-web.pages.dev");
+  });
+
+  it("does not add CORS headers for disallowed origins", async () => {
+    const res = await SELF.fetch("https://example.com/api/v1/health", {
+      headers: { Origin: "http://preview-123.aqi-web.pages.dev" },
+    });
+
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
   it("handles OPTIONS preflight", async () => {
     const res = await SELF.fetch("https://example.com/api/v1/health", {
       method: "OPTIONS",
