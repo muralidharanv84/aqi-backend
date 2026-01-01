@@ -2,6 +2,7 @@ const ALLOWED_ORIGINS = new Set([
   "https://aqi.orangeiqlabs.com",
   "http://localhost:3000",
   "http://localhost:5173",
+  "https://aqi-web.pages.dev",
 ]);
 
 const ALLOWED_HEADERS = "Content-Type, X-Device-Id, X-Signature";
@@ -9,7 +10,7 @@ const ALLOWED_HEADERS = "Content-Type, X-Device-Id, X-Signature";
 export function corsHeaders(origin: string | null): Headers {
   const h = new Headers();
 
-  if (!origin || !ALLOWED_ORIGINS.has(origin)) return h;
+  if (!origin || !isAllowedOrigin(origin)) return h;
 
   h.set("Access-Control-Allow-Origin", origin);
   h.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -18,6 +19,19 @@ export function corsHeaders(origin: string | null): Headers {
   h.set("Vary", "Origin");
 
   return h;
+}
+
+function isAllowedOrigin(origin: string): boolean {
+  if (ALLOWED_ORIGINS.has(origin)) return true;
+
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "https:") return false;
+
+    return url.hostname.endsWith(".aqi-web.pages.dev");
+  } catch {
+    return false;
+  }
 }
 
 export function withCors(req: Request, res: Response): Response {
