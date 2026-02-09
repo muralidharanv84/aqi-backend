@@ -1,6 +1,9 @@
 # AQI Monitor Backend — Design Doc
 Cloudflare Workers + D1
 
+> Winix automation notes are documented separately in
+> `/Users/murali/code/aqi-backend/docs/winix-control.md`.
+
 ---
 
 ## 1. Goals

@@ -67,6 +67,7 @@ export interface WinixDeviceClient {
 
 export const defaultWinixDeviceClient: WinixDeviceClient = {
   async getState(deviceId: string): Promise<WinixDeviceState> {
+    // Read raw attribute map and normalize only fields needed by automation.
     const response = await fetch(stateUrl(deviceId));
     await expectOk(response);
     const payload = (await response.json()) as {
@@ -90,6 +91,7 @@ export const defaultWinixDeviceClient: WinixDeviceClient = {
     };
   },
   async setPowerOn(deviceId: string): Promise<void> {
+    // Control endpoint is idempotent for repeated same-value writes.
     const response = await fetch(controlUrl(deviceId, ATTR_POWER, POWER_ON));
     await expectOk(response);
   },

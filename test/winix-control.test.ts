@@ -46,16 +46,16 @@ describe("winix control logic helpers", () => {
   it("maps PM2.5 boundaries to expected fan speeds", () => {
     expect(mapPm25ToSpeed(9.9)).toBe("low");
     expect(mapPm25ToSpeed(10.0)).toBe("medium");
-    expect(mapPm25ToSpeed(24.9)).toBe("medium");
-    expect(mapPm25ToSpeed(25.0)).toBe("high");
+    expect(mapPm25ToSpeed(19.9)).toBe("medium");
+    expect(mapPm25ToSpeed(20.0)).toBe("high");
     expect(mapPm25ToSpeed(30.0)).toBe("high");
     expect(mapPm25ToSpeed(30.1)).toBe("turbo");
   });
 
   it("applies hysteresis deadband around thresholds", () => {
-    expect(chooseHysteresisSpeed(27, "medium", 2)).toBe("high");
-    expect(chooseHysteresisSpeed(26.9, "medium", 2)).toBe("medium");
-    expect(chooseHysteresisSpeed(22.9, "high", 2)).toBe("medium");
+    expect(chooseHysteresisSpeed(22, "medium", 2)).toBe("high");
+    expect(chooseHysteresisSpeed(21.9, "medium", 2)).toBe("medium");
+    expect(chooseHysteresisSpeed(17.9, "high", 2)).toBe("medium");
     expect(chooseHysteresisSpeed(28, "turbo", 2)).toBe("high");
     expect(chooseHysteresisSpeed(7.9, "medium", 2)).toBe("low");
   });

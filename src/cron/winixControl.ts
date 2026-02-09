@@ -196,6 +196,7 @@ export function resolveWinixControlConfig(env: Env): WinixControlConfig {
 }
 
 export function mapPm25ToSpeed(pm25Avg: number): FanSpeed {
+  // Baseline mapping requested by user.
   if (pm25Avg < 10) return "low";
   if (pm25Avg < 20) return "medium";
   if (pm25Avg <= 30) return "high";
@@ -209,12 +210,15 @@ export function chooseHysteresisSpeed(
 ): FanSpeed {
   if (!previousSpeed) return mapPm25ToSpeed(pm25Avg);
 
+  // Deadband strategy:
+  // - move up only after crossing threshold + deadband
+  // - move down only after crossing threshold - deadband
   const upToMedium = 10 + deadbandUgm3;
-  const upToHigh = 25 + deadbandUgm3;
+  const upToHigh = 20 + deadbandUgm3;
   const upToTurbo = 30 + deadbandUgm3;
 
   const downToLow = 10 - deadbandUgm3;
-  const downToMedium = 25 - deadbandUgm3;
+  const downToMedium = 20 - deadbandUgm3;
   const downFromTurbo = 30 - deadbandUgm3;
 
   switch (previousSpeed) {
@@ -248,6 +252,7 @@ export function applyDwell(
   nowTs: number,
   minDwellSeconds: number,
 ): FanSpeed {
+  // Minimum hold time to avoid frequent speed toggles around thresholds.
   if (!previousSpeed || previousChangeTs === null) return targetSpeed;
   if (targetSpeed === previousSpeed) return previousSpeed;
 
@@ -263,6 +268,7 @@ export function isWindowStale(
   minSamples: number,
   maxAgeSeconds: number,
 ): boolean {
+  // Reject stale windows to avoid driving purifier with missing/old monitor data.
   if (sampleCount < minSamples) return true;
   if (lastSampleTs === null) return true;
   if (nowTs - lastSampleTs > maxAgeSeconds) return true;
@@ -354,6 +360,7 @@ export const defaultWinixControlClient: WinixControlClient = {
     storedAuth: StoredWinixAuthState | null,
     nowSec: number,
   ): Promise<WinixResolvedSession> {
+    // First attempt with stored auth (or refresh), then force full login if device fetch fails.
     let auth = await resolveWinixAuthState(
       username,
       password,
@@ -379,6 +386,12 @@ export async function runWinixControlLoop(
   nowMs: number = Date.now(),
   client: WinixControlClient = defaultWinixControlClient,
 ): Promise<WinixControlRunResult> {
+  // Single 5-minute control cycle:
+  // 1) read PM2.5 window
+  // 2) calculate target with hysteresis + dwell
+  // 3) authenticate and select first Winix device
+  // 4) enforce on/manual/airflow (unless dry-run)
+  // 5) persist control/auth state
   const config = resolveWinixControlConfig(env);
   if (!config.enabled) return { status: "disabled" };
 

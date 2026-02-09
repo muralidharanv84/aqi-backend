@@ -60,6 +60,8 @@ function decodeJwtSub(token: string): string {
 }
 
 function buildWinixUuid(accessToken: string): string {
+  // Winix mobile API expects a synthetic Android-like UUID derived from Cognito `sub`.
+  // This mirrors known-working integrations.
   const userId = decodeJwtSub(accessToken);
   const p1 = crc32(utf8(`github.com/hfern/winixctl${userId}`));
   const p2 = crc32(utf8(`HGF${userId}`));
@@ -98,6 +100,7 @@ async function registerUser(
   username: string,
   uuid: string,
 ): Promise<void> {
+  // Must be called before checkAccessToken/getDeviceInfoList so Winix backend accepts the UUID.
   const response = await postWinixJson<WinixApiBaseResponse>("/registerUser", {
     cognitoClientSecretKey: COGNITO_CLIENT_SECRET_KEY,
     accessToken,
@@ -156,6 +159,7 @@ export const defaultWinixAccountProvider: WinixAccountProvider = {
     username: string,
     auth: StoredWinixAuthState,
   ): Promise<WinixAccountHandle> {
+    // These calls validate token + initialize account context for subsequent device listing.
     const uuid = buildWinixUuid(auth.accessToken);
     await registerUser(auth.accessToken, username, uuid);
     await checkAccessToken(auth.accessToken, uuid);

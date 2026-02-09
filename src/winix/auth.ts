@@ -7,6 +7,20 @@ import {
 } from "./constants";
 import type { StoredWinixAuthState } from "./types";
 
+/**
+ * Worker-safe Winix authentication.
+ *
+ * Why this exists:
+ * - Winix uses AWS Cognito with SRP (USER_SRP_AUTH).
+ * - The off-the-shelf `winix-api` package uses Node-specific runtime behavior that
+ *   is not available in Cloudflare Workers.
+ * - This file implements the minimal SRP + refresh flow using Web Crypto APIs only.
+ *
+ * Important behavior:
+ * - `login()` performs SRP challenge-response against Cognito.
+ * - `refresh()` performs REFRESH_TOKEN auth flow.
+ * - `resolveWinixAuthState()` prefers stored fresh token, then refresh, then full login.
+ */
 export interface WinixAuthProvider {
   login(username: string, password: string): Promise<StoredWinixAuthState>;
   refresh(refreshToken: string, userId: string): Promise<StoredWinixAuthState>;
@@ -15,6 +29,7 @@ export interface WinixAuthProvider {
 const AUTH_ENDPOINT = `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/`;
 const PASSWORD_VERIFIER_CHALLENGE = "PASSWORD_VERIFIER";
 
+// SRP group constants (N, g) used by Cognito USER_SRP_AUTH.
 const N_HEX =
   "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1" +
   "29024E088A67CC74020BBEA63B139B22514A08798E3404DD" +
@@ -37,6 +52,7 @@ const G_HEX = "2";
 const INFO_BITS = new TextEncoder().encode("Caldera Derived Key");
 const BIG_N = BigInt(`0x${N_HEX}`);
 const BIG_G = BigInt(`0x${G_HEX}`);
+// Precomputed k = H(N | g), from Cognito SRP reference algorithm.
 const BIG_K = BigInt(
   "0x538282c4354742d7cbbde2359fcf67f9f5b3a6b08791e5011b43b8a5b66d9ee6",
 );
@@ -176,6 +192,7 @@ async function hmacSha256(
 }
 
 async function computeSecretHash(username: string): Promise<string> {
+  // Cognito client secret hash = Base64(HMAC_SHA256(clientSecret, username + clientId))
   const message = utf8(`${username}${COGNITO_APP_CLIENT_ID}`);
   const key = utf8(COGNITO_CLIENT_SECRET_KEY);
   return bytesToBase64(await hmacSha256(key, message));
@@ -189,6 +206,7 @@ async function computePasswordAuthenticationKey(
   serverBHex: string,
   saltHex: string,
 ): Promise<Uint8Array> {
+  // Derive HKDF key used in PASSWORD_CLAIM_SIGNATURE computation.
   const serverB = BigInt(`0x${serverBHex}`);
   const salt = BigInt(`0x${saltHex}`);
   const uValue = BigInt(
@@ -221,6 +239,7 @@ async function cognitoRequest(
   target: string,
   body: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  // Cognito JSON RPC endpoint shared across auth calls; target determines operation.
   const response = await fetch(AUTH_ENDPOINT, {
     method: "POST",
     headers: {
@@ -252,6 +271,7 @@ async function loginWithSrp(
   username: string,
   password: string,
 ): Promise<StoredWinixAuthState> {
+  // 1) Initiate USER_SRP_AUTH with computed SRP_A.
   const smallA = randomBigInt(128) % BIG_N;
   const largeA = powMod(BIG_G, smallA, BIG_N);
   if (largeA % BIG_N === 0n) {
@@ -284,6 +304,7 @@ async function loginWithSrp(
     throw new Error("Cognito challenge is missing SRP parameters");
   }
 
+  // 2) Answer PASSWORD_VERIFIER challenge by signing Cognito's secret block.
   const timestamp = formattedTimestamp(new Date());
   const hkdf = await computePasswordAuthenticationKey(
     smallA,
@@ -310,6 +331,7 @@ async function loginWithSrp(
       ClientId: COGNITO_APP_CLIENT_ID,
       ChallengeResponses: {
         TIMESTAMP: timestamp,
+        // This must be the original login username (email), not USER_ID_FOR_SRP.
         USERNAME: username,
         PASSWORD_CLAIM_SECRET_BLOCK: secretBlock,
         PASSWORD_CLAIM_SIGNATURE: signature,
@@ -335,6 +357,7 @@ async function refreshAccessToken(
   refreshToken: string,
   userId: string,
 ): Promise<StoredWinixAuthState> {
+  // Refresh uses Cognito subject (`userId`) for SECRET_HASH generation.
   const response = await cognitoRequest(
     "AWSCognitoIdentityProviderService.InitiateAuth",
     {
@@ -376,6 +399,10 @@ export async function resolveWinixAuthState(
   nowSec: number,
   provider: WinixAuthProvider = defaultWinixAuthProvider,
 ): Promise<StoredWinixAuthState> {
+  // Token strategy:
+  // 1) use stored access token if still fresh;
+  // 2) otherwise refresh;
+  // 3) if refresh fails (common with Winix multi-login invalidation), re-login.
   if (!stored) {
     return provider.login(username, password);
   }
