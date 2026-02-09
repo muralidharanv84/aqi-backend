@@ -34,8 +34,10 @@ Only the Winix loop writes to the Winix tables.
    - Base mapping: `<10 -> low`, `<20 -> medium`, `<=30 -> high`, `>30 -> turbo`
    - Hysteresis deadband around 10, 20, 30 via `WINIX_DEADBAND_UGM3`
    - Dwell lock (`WINIX_MIN_DWELL_MINUTES`) to suppress rapid toggles
-5. Resolve auth/session and first available Winix device.
-6. Enforce purifier state in this order:
+5. Resolve auth/session and target Winix devices.
+   - default: all devices returned by Winix account APIs
+   - optional filter: `WINIX_TARGET_DEVICE_IDS` (comma-separated list)
+6. Enforce purifier state on each target device in this order:
    - power on
    - manual mode
    - target airflow
@@ -84,7 +86,7 @@ After auth (`/Users/murali/code/aqi-backend/src/winix/account.ts`):
 2. `/registerUser`
 3. `/checkAccessToken`
 4. `/getDeviceInfoList`
-5. Pick the first device and control it.
+5. Select all devices (or the configured subset via `WINIX_TARGET_DEVICE_IDS`) and control each.
 
 Device I/O (`/Users/murali/code/aqi-backend/src/winix/device.ts`):
 
@@ -115,6 +117,8 @@ Each control loop run inserts one row:
 - `success`: normal control path completed
 - `skipped_stale`: insufficient/fresh data was not available
 - `error`: auth/device/control failure
+
+`winix_device_id` stores the controlled target IDs as a comma-separated string for each run.
 
 ### Retention policy
 
@@ -150,13 +154,14 @@ LIMIT 50;
    - verify monitor `device_id` and ingestion cadence
    - inspect `WINIX_MIN_SAMPLES_5M` and `WINIX_MAX_SAMPLE_AGE_SECONDS`
 3. No device control even with success auth:
-   - check first device returned by account APIs is the intended purifier
+   - if `WINIX_TARGET_DEVICE_IDS` is set, verify all configured IDs exist in account device list
+   - otherwise verify Winix account device list contains the expected purifiers
 4. Unexpected fan changes:
    - verify deadband/dwell env vars
    - inspect `speed_changed` and `effective_change_ts` in `winix_control_log`
 
 ## Intentional Defaults
 
-- Device selection: first Winix device returned by account API.
+- Device selection: all Winix devices returned by account API, unless `WINIX_TARGET_DEVICE_IDS` limits the set.
 - Safety on failure: hold previous effective speed.
 - Manual app overrides: automation re-applies computed speed on next cycle.

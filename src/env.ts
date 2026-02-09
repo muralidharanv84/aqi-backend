@@ -3,6 +3,7 @@ export interface EnvBindings {
   WINIX_USERNAME?: string;
   WINIX_PASSWORD?: string;
   WINIX_MONITOR_DEVICE_ID?: string;
+  WINIX_TARGET_DEVICE_IDS?: string;
   WINIX_CONTROL_ENABLED?: string;
   WINIX_DEADBAND_UGM3?: string;
   WINIX_MIN_DWELL_MINUTES?: string;

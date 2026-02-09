@@ -21,6 +21,7 @@
 	],
 	"vars": {
 		"WINIX_MONITOR_DEVICE_ID": "murali-living-room",
+		"WINIX_TARGET_DEVICE_IDS": "",
 		"WINIX_CONTROL_ENABLED": "true",
 		"WINIX_DEADBAND_UGM3": "2",
 		"WINIX_MIN_DWELL_MINUTES": "10",

@@ -41,6 +41,7 @@ export interface WinixControlConfig {
   enabled: boolean;
   dryRun: boolean;
   monitorDeviceId: string;
+  targetDeviceIds: string[];
   deadbandUgm3: number;
   minDwellMinutes: number;
   minSamples5m: number;
@@ -159,6 +160,15 @@ function parseNumber(
   return parsed;
 }
 
+function parseCsv(value: string | undefined): string[] {
+  if (!value) return [];
+  const parsed = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return [...new Set(parsed)];
+}
+
 function parseFanSpeed(value: string | null | undefined): FanSpeed | null {
   if (!value) return null;
   if (value === "low" || value === "medium" || value === "high" || value === "turbo") {
@@ -180,6 +190,7 @@ export function resolveWinixControlConfig(env: Env): WinixControlConfig {
     ),
     dryRun: parseBoolean(env.WINIX_DRY_RUN, WINIX_CONTROL_DEFAULTS.dryRun),
     monitorDeviceId: (env.WINIX_MONITOR_DEVICE_ID ?? "").trim(),
+    targetDeviceIds: parseCsv(env.WINIX_TARGET_DEVICE_IDS),
     deadbandUgm3: parseNumber(
       env.WINIX_DEADBAND_UGM3,
       WINIX_CONTROL_DEFAULTS.deadbandUgm3,
@@ -395,6 +406,29 @@ async function loadPm25Window(
   };
 }
 
+function resolveTargetDevices(
+  configTargetIds: string[],
+  session: WinixResolvedSession,
+): { deviceIds: string[]; missingIds: string[] } {
+  const allDeviceIds = session.devices
+    .map((device) => device.deviceId)
+    .filter((deviceId) => deviceId.length > 0);
+
+  if (configTargetIds.length === 0) {
+    return { deviceIds: allDeviceIds, missingIds: [] };
+  }
+
+  const available = new Set(allDeviceIds);
+  const missingIds = configTargetIds.filter((deviceId) => !available.has(deviceId));
+  const selectedIds = configTargetIds.filter((deviceId) => available.has(deviceId));
+  return { deviceIds: selectedIds, missingIds };
+}
+
+function joinDeviceIds(deviceIds: string[]): string | null {
+  if (deviceIds.length === 0) return null;
+  return deviceIds.join(",");
+}
+
 export const defaultWinixControlClient: WinixControlClient = {
   async resolveSession(
     username: string,
@@ -431,8 +465,8 @@ export async function runWinixControlLoop(
   // Single 5-minute control cycle:
   // 1) read PM2.5 window
   // 2) calculate target with hysteresis + dwell
-  // 3) authenticate and select first Winix device
-  // 4) enforce on/manual/airflow (unless dry-run)
+  // 3) authenticate and select target Winix devices
+  // 4) enforce on/manual/airflow on each device (unless dry-run)
   // 5) persist control/auth state
   const config = resolveWinixControlConfig(env);
   if (!config.enabled) return { status: "disabled" };
@@ -448,12 +482,13 @@ export async function runWinixControlLoop(
     pm25Avg: number | null,
     lastSampleTs: number | null,
     sampleCount: number | null,
+    winixDeviceIds: string[] | null = null,
   ): Promise<WinixControlRunResult> => {
     await appendControlLog(env, {
       runTs: nowTs,
       runStatus: "error",
       monitorDeviceId: config.monitorDeviceId || null,
-      winixDeviceId: null,
+      winixDeviceId: joinDeviceIds(winixDeviceIds ?? []),
       pm25Avg,
       sampleCount,
       lastSampleTs,
@@ -515,6 +550,7 @@ export async function runWinixControlLoop(
     );
   }
 
+  let targetDeviceIds: string[] | null = null;
   try {
     const targetByHysteresis = chooseHysteresisSpeed(
       window.pm25Avg,
@@ -540,22 +576,44 @@ export async function runWinixControlLoop(
 
     await writeStoredAuthState(env, session.auth, nowTs);
 
-    const device = session.devices[0];
-    if (!device?.deviceId) {
+    const targetSelection = resolveTargetDevices(config.targetDeviceIds, session);
+    if (targetSelection.deviceIds.length === 0) {
       throw new Error("No Winix devices were returned by the account");
     }
+    if (targetSelection.missingIds.length > 0) {
+      throw new Error(
+        `Configured WINIX_TARGET_DEVICE_IDS were not found: ${targetSelection.missingIds.join(",")}`,
+      );
+    }
+
+    targetDeviceIds = targetSelection.deviceIds;
+    const failedDeviceReasons: string[] = [];
 
     if (!config.dryRun) {
-      const currentState = await client.getDeviceState(device.deviceId);
-      if (currentState.power !== "on") {
-        await client.setPowerOn(device.deviceId);
+      for (const deviceId of targetDeviceIds) {
+        try {
+          const currentState = await client.getDeviceState(deviceId);
+          if (currentState.power !== "on") {
+            await client.setPowerOn(deviceId);
+          }
+          if (currentState.mode !== "manual") {
+            await client.setModeManual(deviceId);
+          }
+          if (currentState.airflow !== targetSpeed) {
+            await client.setAirflow(deviceId, targetSpeed);
+          }
+        } catch (error) {
+          failedDeviceReasons.push(
+            `${deviceId}:${truncateError(error)}`,
+          );
+        }
       }
-      if (currentState.mode !== "manual") {
-        await client.setModeManual(device.deviceId);
-      }
-      if (currentState.airflow !== targetSpeed) {
-        await client.setAirflow(device.deviceId, targetSpeed);
-      }
+    }
+
+    if (failedDeviceReasons.length > 0) {
+      throw new Error(
+        `Failed to control one or more Winix devices (${failedDeviceReasons.length}/${targetDeviceIds.length}): ${failedDeviceReasons.join(" | ")}`,
+      );
     }
 
     const speedChanged = previousSpeed !== targetSpeed;
@@ -564,7 +622,7 @@ export async function runWinixControlLoop(
       runTs: nowTs,
       runStatus: "success",
       monitorDeviceId: config.monitorDeviceId,
-      winixDeviceId: device.deviceId,
+      winixDeviceId: joinDeviceIds(targetDeviceIds),
       pm25Avg: window.pm25Avg,
       sampleCount: window.sampleCount,
       lastSampleTs: window.lastSampleTs,
@@ -585,6 +643,7 @@ export async function runWinixControlLoop(
       window.pm25Avg,
       window.lastSampleTs,
       window.sampleCount,
+      targetDeviceIds,
     );
   }
 }

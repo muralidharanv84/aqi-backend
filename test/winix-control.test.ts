@@ -13,6 +13,7 @@ import { insertDevice, insertSample, resetDb } from "./utils/db";
 
 type ControlStateRow = {
   run_status: string;
+  winix_device_id: string | null;
   previous_speed: string | null;
   target_speed: string | null;
   effective_speed: string | null;
@@ -32,7 +33,7 @@ type AuthStateRow = {
   access_expires_at: number;
 };
 
-function buildControlEnv(): Env {
+function buildControlEnv(overrides: Partial<Env> = {}): Env {
   return {
     DB: env.DB,
     WINIX_USERNAME: "user@example.com",
@@ -44,6 +45,7 @@ function buildControlEnv(): Env {
     WINIX_MIN_SAMPLES_5M: "3",
     WINIX_MAX_SAMPLE_AGE_SECONDS: "360",
     WINIX_DRY_RUN: "false",
+    ...overrides,
   };
 }
 
@@ -178,6 +180,7 @@ describe("runWinixControlLoop", () => {
       )
       .first<ControlStateRow>();
     expect(controlState?.run_status).toBe("success");
+    expect(controlState?.winix_device_id).toBe("device-1");
     expect(controlState?.previous_speed).toBeNull();
     expect(controlState?.target_speed).toBe("turbo");
     expect(controlState?.effective_speed).toBe("turbo");
@@ -193,6 +196,142 @@ describe("runWinixControlLoop", () => {
     expect(authState?.user_id).toBe("u1");
     expect(authState?.access_token).toBe("a1");
     expect(authState?.refresh_token).toBe("r1");
+  });
+
+  it("controls all returned devices in the same cycle", async () => {
+    const controlEnv = buildControlEnv();
+    const nowTs = 25_000;
+    await insertDevice(controlEnv.DB, "monitor-1", "secret");
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 250, { pm25_ugm3: 31 });
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 180, { pm25_ugm3: 32 });
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 60, { pm25_ugm3: 33 });
+
+    const calls: Array<{ deviceId: string; method: string; speed?: FanSpeed }> = [];
+    const mockClient = {
+      resolveSession: vi.fn().mockResolvedValue({
+        auth: {
+          userId: "u1",
+          accessToken: "a1",
+          refreshToken: "r1",
+          accessExpiresAt: nowTs + 3600,
+        },
+        devices: [
+          { deviceId: "device-1", alias: "Living Room 1", model: "T800" },
+          { deviceId: "device-2", alias: "Living Room 2", model: "T800" },
+        ],
+      }),
+      getDeviceState: vi.fn().mockResolvedValue({
+        power: "off",
+        mode: "auto",
+        airflow: "low",
+      }),
+      setPowerOn: vi.fn().mockImplementation(async (deviceId: string) => {
+        calls.push({ deviceId, method: "power" });
+      }),
+      setModeManual: vi.fn().mockImplementation(async (deviceId: string) => {
+        calls.push({ deviceId, method: "manual" });
+      }),
+      setAirflow: vi.fn().mockImplementation(async (deviceId: string, speed: FanSpeed) => {
+        calls.push({ deviceId, method: "airflow", speed });
+      }),
+    };
+
+    const result = await runWinixControlLoop(controlEnv, nowTs * 1000, mockClient);
+    expect(result.status).toBe("success");
+    expect(mockClient.getDeviceState).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual([
+      { deviceId: "device-1", method: "power" },
+      { deviceId: "device-1", method: "manual" },
+      { deviceId: "device-1", method: "airflow", speed: "turbo" },
+      { deviceId: "device-2", method: "power" },
+      { deviceId: "device-2", method: "manual" },
+      { deviceId: "device-2", method: "airflow", speed: "turbo" },
+    ]);
+
+    const controlState = await controlEnv.DB
+      .prepare("SELECT * FROM winix_control_log ORDER BY id DESC LIMIT 1")
+      .first<ControlStateRow>();
+    expect(controlState?.run_status).toBe("success");
+    expect(controlState?.winix_device_id).toBe("device-1,device-2");
+  });
+
+  it("limits control to WINIX_TARGET_DEVICE_IDS when configured", async () => {
+    const controlEnv = buildControlEnv({ WINIX_TARGET_DEVICE_IDS: "device-2" });
+    const nowTs = 26_000;
+    await insertDevice(controlEnv.DB, "monitor-1", "secret");
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 250, { pm25_ugm3: 31 });
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 180, { pm25_ugm3: 32 });
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 60, { pm25_ugm3: 33 });
+
+    const calls: Array<{ deviceId: string; method: string }> = [];
+    const mockClient = {
+      resolveSession: vi.fn().mockResolvedValue({
+        auth: {
+          userId: "u1",
+          accessToken: "a1",
+          refreshToken: "r1",
+          accessExpiresAt: nowTs + 3600,
+        },
+        devices: [
+          { deviceId: "device-1", alias: "Living Room 1", model: "T800" },
+          { deviceId: "device-2", alias: "Living Room 2", model: "T800" },
+        ],
+      }),
+      getDeviceState: vi.fn().mockImplementation(async (deviceId: string) => {
+        calls.push({ deviceId, method: "state" });
+        return { power: "off", mode: "auto", airflow: "low" as FanSpeed };
+      }),
+      setPowerOn: vi.fn(),
+      setModeManual: vi.fn(),
+      setAirflow: vi.fn(),
+    };
+
+    const result = await runWinixControlLoop(controlEnv, nowTs * 1000, mockClient);
+    expect(result.status).toBe("success");
+    expect(calls).toEqual([{ deviceId: "device-2", method: "state" }]);
+
+    const controlState = await controlEnv.DB
+      .prepare("SELECT * FROM winix_control_log ORDER BY id DESC LIMIT 1")
+      .first<ControlStateRow>();
+    expect(controlState?.run_status).toBe("success");
+    expect(controlState?.winix_device_id).toBe("device-2");
+  });
+
+  it("errors if WINIX_TARGET_DEVICE_IDS contains unknown devices", async () => {
+    const controlEnv = buildControlEnv({
+      WINIX_TARGET_DEVICE_IDS: "device-1,missing-device",
+    });
+    const nowTs = 27_000;
+    await insertDevice(controlEnv.DB, "monitor-1", "secret");
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 250, { pm25_ugm3: 15 });
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 180, { pm25_ugm3: 16 });
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 60, { pm25_ugm3: 17 });
+
+    const mockClient = {
+      resolveSession: vi.fn().mockResolvedValue({
+        auth: {
+          userId: "u1",
+          accessToken: "a1",
+          refreshToken: "r1",
+          accessExpiresAt: nowTs + 3600,
+        },
+        devices: [{ deviceId: "device-1", alias: "Living Room 1", model: "T800" }],
+      }),
+      getDeviceState: vi.fn(),
+      setPowerOn: vi.fn(),
+      setModeManual: vi.fn(),
+      setAirflow: vi.fn(),
+    };
+
+    const result = await runWinixControlLoop(controlEnv, nowTs * 1000, mockClient);
+    expect(result.status).toBe("error");
+    expect(mockClient.getDeviceState).toHaveBeenCalledTimes(0);
+
+    const controlState = await controlEnv.DB
+      .prepare("SELECT * FROM winix_control_log ORDER BY id DESC LIMIT 1")
+      .first<ControlStateRow>();
+    expect(controlState?.run_status).toBe("error");
+    expect(controlState?.error_message).toContain("WINIX_TARGET_DEVICE_IDS");
   });
 
   it("appends log rows across runs and carries prior state forward", async () => {
