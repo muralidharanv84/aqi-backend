@@ -18,7 +18,7 @@ This document tracks migration from in-repo Winix modules to the shared
 - [x] Backend tests updated to import Winix types/auth APIs from package.
 - [x] Backend docs updated to reference package-backed implementation.
 - [x] Public GitHub repo created at `muralidharanv84/winix-control-sdk`.
-- [x] npm package published as `winix-control-sdk@0.1.0`.
+- [x] npm package published as `winix-control-sdk@0.2.0`.
 
 ## Behavior Parity Acceptance Criteria
 

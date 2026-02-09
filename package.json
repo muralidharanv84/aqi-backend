@@ -13,14 +13,14 @@
 		"test:watch": "vitest",
 		"cf-typegen": "wrangler types"
 	},
-	"dependencies": {
-		"winix-control-sdk": "^0.1.0"
-	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.19",
 		"miniflare": "^4.20251217.0",
 		"typescript": "^5.5.2",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.54.0"
+	},
+	"dependencies": {
+		"winix-control-sdk": "^0.2.0"
 	}
 }
