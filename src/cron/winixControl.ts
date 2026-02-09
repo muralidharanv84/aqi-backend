@@ -197,7 +197,7 @@ export function resolveWinixControlConfig(env: Env): WinixControlConfig {
 
 export function mapPm25ToSpeed(pm25Avg: number): FanSpeed {
   if (pm25Avg < 10) return "low";
-  if (pm25Avg < 25) return "medium";
+  if (pm25Avg < 20) return "medium";
   if (pm25Avg <= 30) return "high";
   return "turbo";
 }
