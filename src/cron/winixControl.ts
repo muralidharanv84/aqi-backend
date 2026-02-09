@@ -25,13 +25,16 @@ type AuthRow = {
   access_expires_at: number;
 };
 
-type ControlStateRow = {
-  last_speed: string | null;
-  last_change_ts: number | null;
-  last_pm25_avg: number | null;
-  last_sample_ts: number | null;
+type ControlLogRow = {
+  effective_speed: string | null;
+  effective_change_ts: number | null;
   error_streak: number | null;
-  last_error: string | null;
+};
+
+type PreviousControlState = {
+  speed: FanSpeed | null;
+  changeTs: number | null;
+  errorStreak: number;
 };
 
 export interface WinixControlConfig {
@@ -98,38 +101,43 @@ const UPSERT_AUTH_SQL = `
     updated_ts = excluded.updated_ts
 `;
 
-const GET_CONTROL_STATE_SQL = `
+const GET_LATEST_CONTROL_LOG_SQL = `
   SELECT
-    last_speed,
-    last_change_ts,
-    last_pm25_avg,
-    last_sample_ts,
-    error_streak,
-    last_error
-  FROM winix_control_state
-  WHERE id = 1
+    effective_speed,
+    effective_change_ts,
+    error_streak
+  FROM winix_control_log
+  ORDER BY id DESC
+  LIMIT 1
 `;
 
-const UPSERT_CONTROL_STATE_SQL = `
-  INSERT INTO winix_control_state (
-    id,
-    last_speed,
-    last_change_ts,
-    last_pm25_avg,
+const INSERT_CONTROL_LOG_SQL = `
+  INSERT INTO winix_control_log (
+    run_ts,
+    run_status,
+    monitor_device_id,
+    winix_device_id,
+    pm25_avg,
+    sample_count,
     last_sample_ts,
+    previous_speed,
+    target_speed,
+    effective_speed,
+    speed_changed,
+    effective_change_ts,
     error_streak,
-    last_error,
-    updated_ts
-  ) VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-  ON CONFLICT(id) DO UPDATE SET
-    last_speed = excluded.last_speed,
-    last_change_ts = excluded.last_change_ts,
-    last_pm25_avg = excluded.last_pm25_avg,
-    last_sample_ts = excluded.last_sample_ts,
-    error_streak = excluded.error_streak,
-    last_error = excluded.last_error,
-    updated_ts = excluded.updated_ts
+    error_message,
+    created_ts
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
+
+const DELETE_CONTROL_LOG_OLDER_THAN_SQL = `
+  DELETE FROM winix_control_log
+  WHERE run_ts < ?
+`;
+
+export const WINIX_CONTROL_LOG_RETENTION_DAYS = 30;
+const SECONDS_PER_DAY = 24 * 60 * 60;
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (!value) return fallback;
@@ -275,6 +283,16 @@ export function isWindowStale(
   return false;
 }
 
+export async function enforceWinixControlLogRetention(
+  env: Env,
+  nowMs: number = Date.now(),
+): Promise<void> {
+  // Keep a rolling 30-day history in the append-only log table.
+  const nowTs = Math.floor(nowMs / 1000);
+  const cutoffTs = nowTs - WINIX_CONTROL_LOG_RETENTION_DAYS * SECONDS_PER_DAY;
+  await env.DB.prepare(DELETE_CONTROL_LOG_OLDER_THAN_SQL).bind(cutoffTs).run();
+}
+
 async function readStoredAuthState(
   env: Env,
 ): Promise<StoredWinixAuthState | null> {
@@ -305,32 +323,56 @@ async function writeStoredAuthState(
     .run();
 }
 
-async function readControlState(env: Env): Promise<ControlStateRow | null> {
-  return env.DB.prepare(GET_CONTROL_STATE_SQL).first<ControlStateRow>();
+async function readPreviousControlState(env: Env): Promise<PreviousControlState> {
+  const latest = await env.DB.prepare(GET_LATEST_CONTROL_LOG_SQL).first<ControlLogRow>();
+  if (latest) {
+    return {
+      speed: parseFanSpeed(latest.effective_speed),
+      changeTs: latest.effective_change_ts ?? null,
+      errorStreak: latest.error_streak ?? 0,
+    };
+  }
+  return { speed: null, changeTs: null, errorStreak: 0 };
 }
 
-async function writeControlState(
+async function appendControlLog(
   env: Env,
-  state: {
-    lastSpeed: FanSpeed | null;
-    lastChangeTs: number | null;
-    lastPm25Avg: number | null;
+  row: {
+    runTs: number;
+    runStatus: "success" | "skipped_stale" | "error";
+    monitorDeviceId: string | null;
+    winixDeviceId: string | null;
+    pm25Avg: number | null;
+    sampleCount: number | null;
     lastSampleTs: number | null;
+    previousSpeed: FanSpeed | null;
+    targetSpeed: FanSpeed | null;
+    effectiveSpeed: FanSpeed | null;
+    speedChanged: boolean;
+    effectiveChangeTs: number | null;
     errorStreak: number;
-    lastError: string | null;
+    errorMessage: string | null;
     nowTs: number;
   },
 ): Promise<void> {
   await env.DB
-    .prepare(UPSERT_CONTROL_STATE_SQL)
+    .prepare(INSERT_CONTROL_LOG_SQL)
     .bind(
-      state.lastSpeed,
-      state.lastChangeTs,
-      state.lastPm25Avg,
-      state.lastSampleTs,
-      state.errorStreak,
-      state.lastError,
-      state.nowTs,
+      row.runTs,
+      row.runStatus,
+      row.monitorDeviceId,
+      row.winixDeviceId,
+      row.pm25Avg,
+      row.sampleCount,
+      row.lastSampleTs,
+      row.previousSpeed,
+      row.targetSpeed,
+      row.effectiveSpeed,
+      row.speedChanged ? 1 : 0,
+      row.effectiveChangeTs,
+      row.errorStreak,
+      row.errorMessage,
+      row.nowTs,
     )
     .run();
 }
@@ -396,30 +438,39 @@ export async function runWinixControlLoop(
   if (!config.enabled) return { status: "disabled" };
 
   const nowTs = Math.floor(nowMs / 1000);
-  const previousState = await readControlState(env);
-  const previousSpeed = parseFanSpeed(previousState?.last_speed);
-  const previousChangeTs = previousState?.last_change_ts ?? null;
-  const previousErrorStreak = previousState?.error_streak ?? 0;
+  const previousState = await readPreviousControlState(env);
+  const previousSpeed = previousState.speed;
+  const previousChangeTs = previousState.changeTs;
+  const previousErrorStreak = previousState.errorStreak;
 
   const recordError = async (
     reason: string,
     pm25Avg: number | null,
     lastSampleTs: number | null,
+    sampleCount: number | null,
   ): Promise<WinixControlRunResult> => {
-    await writeControlState(env, {
-      lastSpeed: previousSpeed,
-      lastChangeTs: previousChangeTs,
-      lastPm25Avg: pm25Avg,
+    await appendControlLog(env, {
+      runTs: nowTs,
+      runStatus: "error",
+      monitorDeviceId: config.monitorDeviceId || null,
+      winixDeviceId: null,
+      pm25Avg,
+      sampleCount,
       lastSampleTs,
+      previousSpeed,
+      targetSpeed: null,
+      effectiveSpeed: previousSpeed,
+      speedChanged: false,
+      effectiveChangeTs: previousChangeTs,
       errorStreak: previousErrorStreak + 1,
-      lastError: reason,
+      errorMessage: reason,
       nowTs,
     });
     return { status: "error", reason };
   };
 
   if (!config.monitorDeviceId) {
-    return recordError("WINIX_MONITOR_DEVICE_ID is not configured", null, null);
+    return recordError("WINIX_MONITOR_DEVICE_ID is not configured", null, null, null);
   }
 
   const window = await loadPm25Window(env, config.monitorDeviceId, nowTs);
@@ -433,13 +484,21 @@ export async function runWinixControlLoop(
 
   if (stale || window.pm25Avg === null) {
     const reason = `Stale PM2.5 data: samples=${window.sampleCount}, lastSampleTs=${window.lastSampleTs ?? "none"}`;
-    await writeControlState(env, {
-      lastSpeed: previousSpeed,
-      lastChangeTs: previousChangeTs,
-      lastPm25Avg: window.pm25Avg,
+    await appendControlLog(env, {
+      runTs: nowTs,
+      runStatus: "skipped_stale",
+      monitorDeviceId: config.monitorDeviceId,
+      winixDeviceId: null,
+      pm25Avg: window.pm25Avg,
+      sampleCount: window.sampleCount,
       lastSampleTs: window.lastSampleTs,
+      previousSpeed,
+      targetSpeed: null,
+      effectiveSpeed: previousSpeed,
+      speedChanged: false,
+      effectiveChangeTs: previousChangeTs,
       errorStreak: previousErrorStreak + 1,
-      lastError: reason,
+      errorMessage: reason,
       nowTs,
     });
     return { status: "skipped_stale", reason };
@@ -448,7 +507,12 @@ export async function runWinixControlLoop(
   const username = env.WINIX_USERNAME?.trim() ?? "";
   const password = env.WINIX_PASSWORD ?? "";
   if (!username || !password) {
-    return recordError("Winix credentials are not configured", window.pm25Avg, window.lastSampleTs);
+    return recordError(
+      "Winix credentials are not configured",
+      window.pm25Avg,
+      window.lastSampleTs,
+      window.sampleCount,
+    );
   }
 
   try {
@@ -494,19 +558,33 @@ export async function runWinixControlLoop(
       }
     }
 
-    const changed = previousSpeed !== targetSpeed;
-    await writeControlState(env, {
-      lastSpeed: targetSpeed,
-      lastChangeTs: changed ? nowTs : previousChangeTs ?? nowTs,
-      lastPm25Avg: window.pm25Avg,
+    const speedChanged = previousSpeed !== targetSpeed;
+    const effectiveChangeTs = speedChanged ? nowTs : previousChangeTs ?? nowTs;
+    await appendControlLog(env, {
+      runTs: nowTs,
+      runStatus: "success",
+      monitorDeviceId: config.monitorDeviceId,
+      winixDeviceId: device.deviceId,
+      pm25Avg: window.pm25Avg,
+      sampleCount: window.sampleCount,
       lastSampleTs: window.lastSampleTs,
+      previousSpeed,
+      targetSpeed,
+      effectiveSpeed: targetSpeed,
+      speedChanged,
+      effectiveChangeTs,
       errorStreak: 0,
-      lastError: null,
+      errorMessage: null,
       nowTs,
     });
 
     return { status: "success", targetSpeed, pm25Avg: window.pm25Avg };
   } catch (error) {
-    return recordError(truncateError(error), window.pm25Avg, window.lastSampleTs);
+    return recordError(
+      truncateError(error),
+      window.pm25Avg,
+      window.lastSampleTs,
+      window.sampleCount,
+    );
   }
 }

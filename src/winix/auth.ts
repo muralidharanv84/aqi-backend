@@ -209,6 +209,7 @@ async function computePasswordAuthenticationKey(
   // Derive HKDF key used in PASSWORD_CLAIM_SIGNATURE computation.
   const serverB = BigInt(`0x${serverBHex}`);
   const salt = BigInt(`0x${saltHex}`);
+  // SRP scrambling parameter u = H(A | B). A zero value is invalid per SRP.
   const uValue = BigInt(
     `0x${await hexHash(`${padHex(largeA)}${padHex(serverB)}`)}`,
   );
@@ -219,14 +220,17 @@ async function computePasswordAuthenticationKey(
   const poolShort = COGNITO_USER_POOL_ID.split("_")[1];
   const usernamePassword = `${poolShort}${userIdForSrp}:${password}`;
   const usernamePasswordHash = await sha256Hex(utf8(usernamePassword));
+  // Private key x = H(salt | H(poolShort + userIdForSrp + ":" + password)).
   const xValue = BigInt(
     `0x${await hexHash(`${padHex(salt)}${usernamePasswordHash}`)}`,
   );
 
+  // SRP shared secret S = (B - k * g^x)^(a + u * x) mod N.
   const gModPowX = powMod(BIG_G, xValue, BIG_N);
   const intValue2 = serverB - BIG_K * gModPowX;
   const sValue = powMod(intValue2, smallA + uValue * xValue, BIG_N);
 
+  // Cognito derives a short key from S via HKDF(u, S) and uses first 16 bytes.
   const ikm = hexToBytes(padHex(sValue));
   const saltBytes = hexToBytes(padHex(uValue.toString(16)));
   const prk = await hmacSha256(saltBytes, ikm);

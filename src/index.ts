@@ -1,6 +1,9 @@
 import type { Env } from "./env";
 import { aggregateCompletedHours } from "./cron/aggregate";
-import { runWinixControlLoop } from "./cron/winixControl";
+import {
+  enforceWinixControlLogRetention,
+  runWinixControlLoop,
+} from "./cron/winixControl";
 import { handleHealth } from "./routes/health";
 import { handleIngest } from "./routes/ingest";
 import { handleLatest } from "./routes/latest";
@@ -23,6 +26,7 @@ export async function runScheduledJobs(
   const results = await Promise.allSettled([
     aggregateCompletedHours(env, nowMs),
     runWinixControlLoop(env, nowMs),
+    enforceWinixControlLogRetention(env, nowMs),
   ]);
 
   for (const result of results) {

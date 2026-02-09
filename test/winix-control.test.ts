@@ -12,12 +12,17 @@ import type { FanSpeed } from "../src/winix/types";
 import { insertDevice, insertSample, resetDb } from "./utils/db";
 
 type ControlStateRow = {
-  last_speed: string | null;
-  last_change_ts: number | null;
-  last_pm25_avg: number | null;
+  run_status: string;
+  previous_speed: string | null;
+  target_speed: string | null;
+  effective_speed: string | null;
+  speed_changed: number;
+  effective_change_ts: number | null;
+  pm25_avg: number | null;
+  sample_count: number | null;
   last_sample_ts: number | null;
   error_streak: number;
-  last_error: string | null;
+  error_message: string | null;
 };
 
 type AuthStateRow = {
@@ -101,12 +106,16 @@ describe("runWinixControlLoop", () => {
     expect(mockClient.resolveSession).toHaveBeenCalledTimes(0);
 
     const state = await controlEnv.DB
-      .prepare("SELECT * FROM winix_control_state WHERE id = 1")
+      .prepare(
+        "SELECT * FROM winix_control_log ORDER BY id DESC LIMIT 1",
+      )
       .first<ControlStateRow>();
 
     expect(state?.error_streak).toBe(1);
-    expect(state?.last_speed).toBeNull();
-    expect(state?.last_error?.toLowerCase()).toContain("stale");
+    expect(state?.run_status).toBe("skipped_stale");
+    expect(state?.effective_speed).toBeNull();
+    expect(state?.target_speed).toBeNull();
+    expect(state?.error_message?.toLowerCase()).toContain("stale");
   });
 
   it("authenticates, controls speed, and writes auth/control state", async () => {
@@ -164,13 +173,19 @@ describe("runWinixControlLoop", () => {
     ]);
 
     const controlState = await controlEnv.DB
-      .prepare("SELECT * FROM winix_control_state WHERE id = 1")
+      .prepare(
+        "SELECT * FROM winix_control_log ORDER BY id DESC LIMIT 1",
+      )
       .first<ControlStateRow>();
-    expect(controlState?.last_speed).toBe("turbo");
+    expect(controlState?.run_status).toBe("success");
+    expect(controlState?.previous_speed).toBeNull();
+    expect(controlState?.target_speed).toBe("turbo");
+    expect(controlState?.effective_speed).toBe("turbo");
+    expect(controlState?.speed_changed).toBe(1);
     expect(controlState?.error_streak).toBe(0);
-    expect(controlState?.last_error).toBeNull();
-    expect(controlState?.last_change_ts).toBe(nowTs);
-    expect(controlState?.last_pm25_avg).toBe(32);
+    expect(controlState?.error_message).toBeNull();
+    expect(controlState?.effective_change_ts).toBe(nowTs);
+    expect(controlState?.pm25_avg).toBe(32);
 
     const authState = await controlEnv.DB
       .prepare("SELECT * FROM winix_auth_state WHERE id = 1")
@@ -179,4 +194,57 @@ describe("runWinixControlLoop", () => {
     expect(authState?.access_token).toBe("a1");
     expect(authState?.refresh_token).toBe("r1");
   });
+
+  it("appends log rows across runs and carries prior state forward", async () => {
+    const controlEnv = buildControlEnv();
+    const nowTs = 30_000;
+    await insertDevice(controlEnv.DB, "monitor-1", "secret");
+
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 250, { pm25_ugm3: 32 });
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 180, { pm25_ugm3: 33 });
+    await insertSample(controlEnv.DB, "monitor-1", nowTs - 60, { pm25_ugm3: 34 });
+
+    const mockClient = {
+      resolveSession: vi.fn().mockResolvedValue({
+        auth: {
+          userId: "u1",
+          accessToken: "a1",
+          refreshToken: "r1",
+          accessExpiresAt: nowTs + 3600,
+        },
+        devices: [{ deviceId: "device-1", alias: "Living Room", model: "T800" }],
+      }),
+      getDeviceState: vi.fn().mockResolvedValue({
+        power: "on",
+        mode: "manual",
+        airflow: "low",
+      }),
+      setPowerOn: vi.fn(),
+      setModeManual: vi.fn(),
+      setAirflow: vi.fn(),
+    };
+
+    await runWinixControlLoop(controlEnv, nowTs * 1000, mockClient);
+
+    // Keep PM2.5 high enough to avoid changing speed; this should still write a new log row.
+    await insertSample(controlEnv.DB, "monitor-1", nowTs + 60, { pm25_ugm3: 31 });
+    await insertSample(controlEnv.DB, "monitor-1", nowTs + 120, { pm25_ugm3: 32 });
+    await insertSample(controlEnv.DB, "monitor-1", nowTs + 180, { pm25_ugm3: 33 });
+
+    await runWinixControlLoop(controlEnv, (nowTs + 180) * 1000, mockClient);
+
+    const countRow = await controlEnv.DB
+      .prepare("SELECT COUNT(*) AS n FROM winix_control_log")
+      .first<{ n: number }>();
+    expect(countRow?.n).toBe(2);
+
+    const latest = await controlEnv.DB
+      .prepare("SELECT * FROM winix_control_log ORDER BY id DESC LIMIT 1")
+      .first<ControlStateRow>();
+    expect(latest?.previous_speed).toBe("turbo");
+    expect(latest?.target_speed).toBe("turbo");
+    expect(latest?.speed_changed).toBe(0);
+    expect(latest?.error_streak).toBe(0);
+  });
+
 });

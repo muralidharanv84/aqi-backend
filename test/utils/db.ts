@@ -53,15 +53,23 @@ const SCHEMA_STATEMENTS = [
     access_expires_at INTEGER NOT NULL,
     updated_ts        INTEGER NOT NULL
   );`,
-  `CREATE TABLE IF NOT EXISTS winix_control_state (
-    id             INTEGER PRIMARY KEY CHECK (id = 1),
-    last_speed     TEXT,
-    last_change_ts INTEGER,
-    last_pm25_avg  REAL,
-    last_sample_ts INTEGER,
-    error_streak   INTEGER NOT NULL DEFAULT 0,
-    last_error     TEXT,
-    updated_ts     INTEGER NOT NULL
+  `CREATE TABLE IF NOT EXISTS winix_control_log (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_ts              INTEGER NOT NULL,
+    run_status          TEXT NOT NULL,
+    monitor_device_id   TEXT,
+    winix_device_id     TEXT,
+    pm25_avg            REAL,
+    sample_count        INTEGER,
+    last_sample_ts      INTEGER,
+    previous_speed      TEXT,
+    target_speed        TEXT,
+    effective_speed     TEXT,
+    speed_changed       INTEGER NOT NULL DEFAULT 0,
+    effective_change_ts INTEGER,
+    error_streak        INTEGER NOT NULL DEFAULT 0,
+    error_message       TEXT,
+    created_ts          INTEGER NOT NULL
   );`,
 ];
 
@@ -69,7 +77,7 @@ export async function resetDb(db: D1Database): Promise<void> {
   for (const stmt of SCHEMA_STATEMENTS) {
     await db.prepare(stmt).run();
   }
-  await db.prepare("DELETE FROM winix_control_state").run();
+  await db.prepare("DELETE FROM winix_control_log").run();
   await db.prepare("DELETE FROM winix_auth_state").run();
   await db.prepare("DELETE FROM samples_hourly").run();
   await db.prepare("DELETE FROM samples_raw").run();
