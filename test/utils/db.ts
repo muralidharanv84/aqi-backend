@@ -45,12 +45,32 @@ const SCHEMA_STATEMENTS = [
     PRIMARY KEY (device_id, hour_ts),
     FOREIGN KEY (device_id) REFERENCES devices(device_id)
   );`,
+  `CREATE TABLE IF NOT EXISTS winix_auth_state (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    user_id           TEXT NOT NULL,
+    access_token      TEXT NOT NULL,
+    refresh_token     TEXT NOT NULL,
+    access_expires_at INTEGER NOT NULL,
+    updated_ts        INTEGER NOT NULL
+  );`,
+  `CREATE TABLE IF NOT EXISTS winix_control_state (
+    id             INTEGER PRIMARY KEY CHECK (id = 1),
+    last_speed     TEXT,
+    last_change_ts INTEGER,
+    last_pm25_avg  REAL,
+    last_sample_ts INTEGER,
+    error_streak   INTEGER NOT NULL DEFAULT 0,
+    last_error     TEXT,
+    updated_ts     INTEGER NOT NULL
+  );`,
 ];
 
 export async function resetDb(db: D1Database): Promise<void> {
   for (const stmt of SCHEMA_STATEMENTS) {
     await db.prepare(stmt).run();
   }
+  await db.prepare("DELETE FROM winix_control_state").run();
+  await db.prepare("DELETE FROM winix_auth_state").run();
   await db.prepare("DELETE FROM samples_hourly").run();
   await db.prepare("DELETE FROM samples_raw").run();
   await db.prepare("DELETE FROM devices").run();

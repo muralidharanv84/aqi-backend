@@ -7,6 +7,7 @@
 	"name": "aqi-backend",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-09-06",
+	"compatibility_flags": ["nodejs_compat"],
 	"observability": {
 		"enabled": true
 	},
@@ -17,10 +18,18 @@
 			"database_id": "87882461-63d2-49c0-bb40-bbae12ea3ec8"
 			//"remote": true
 		}
-	]
-	,
+	],
+	"vars": {
+		"WINIX_MONITOR_DEVICE_ID": "murali-living-room",
+		"WINIX_CONTROL_ENABLED": "true",
+		"WINIX_DEADBAND_UGM3": "2",
+		"WINIX_MIN_DWELL_MINUTES": "10",
+		"WINIX_MIN_SAMPLES_5M": "3",
+		"WINIX_MAX_SAMPLE_AGE_SECONDS": "360",
+		"WINIX_DRY_RUN": "false"
+	},
 	"triggers": {
-		"crons": ["*/10 * * * *"]
+		"crons": ["*/5 * * * *"]
 	}
 	/**
 	 * Smart Placement

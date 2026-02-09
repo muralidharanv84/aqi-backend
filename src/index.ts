@@ -1,5 +1,6 @@
 import type { Env } from "./env";
 import { aggregateCompletedHours } from "./cron/aggregate";
+import { runWinixControlLoop } from "./cron/winixControl";
 import { handleHealth } from "./routes/health";
 import { handleIngest } from "./routes/ingest";
 import { handleLatest } from "./routes/latest";
@@ -11,9 +12,25 @@ import { corsHeaders, withCors } from "./utils/cors";
 export default {
   fetch: (req: Request, env: Env) => handleRequest(req, env),
   scheduled: (_event: ScheduledController, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(aggregateCompletedHours(env));
+    ctx.waitUntil(runScheduledJobs(env));
   },
 };
+
+export async function runScheduledJobs(
+  env: Env,
+  nowMs: number = Date.now(),
+): Promise<void> {
+  const results = await Promise.allSettled([
+    aggregateCompletedHours(env, nowMs),
+    runWinixControlLoop(env, nowMs),
+  ]);
+
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("Scheduled job failed:", result.reason);
+    }
+  }
+}
 
 export async function handleRequest(req: Request, env: Env): Promise<Response> {
   // Preflight

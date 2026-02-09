@@ -68,3 +68,22 @@ CREATE TABLE IF NOT EXISTS samples_hourly (
 CREATE INDEX IF NOT EXISTS idx_samples_hourly_device_ts
     ON samples_hourly(device_id, hour_ts);
 
+CREATE TABLE IF NOT EXISTS winix_auth_state (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    user_id           TEXT NOT NULL,
+    access_token      TEXT NOT NULL,
+    refresh_token     TEXT NOT NULL,
+    access_expires_at INTEGER NOT NULL,
+    updated_ts        INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS winix_control_state (
+    id             INTEGER PRIMARY KEY CHECK (id = 1),
+    last_speed     TEXT,
+    last_change_ts INTEGER,
+    last_pm25_avg  REAL,
+    last_sample_ts INTEGER,
+    error_streak   INTEGER NOT NULL DEFAULT 0,
+    last_error     TEXT,
+    updated_ts     INTEGER NOT NULL
+);
