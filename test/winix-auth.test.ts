@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   resolveWinixAuthState,
   type WinixAuthProvider,
-} from "../src/winix/auth";
-import type { StoredWinixAuthState } from "../src/winix/types";
+  type StoredWinixAuthState,
+} from "winix-control-sdk";
 
 function buildAuth(overrides: Partial<StoredWinixAuthState> = {}): StoredWinixAuthState {
   return {

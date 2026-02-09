@@ -8,7 +8,7 @@ import {
   mapPm25ToSpeed,
 } from "../src/cron/winixControl";
 import type { Env } from "../src/env";
-import type { FanSpeed } from "../src/winix/types";
+import type { FanSpeed } from "winix-control-sdk";
 import { insertDevice, insertSample, resetDb } from "./utils/db";
 
 type ControlStateRow = {

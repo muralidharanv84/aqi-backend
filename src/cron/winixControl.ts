@@ -1,16 +1,13 @@
 import type { Env } from "../env";
-import { resolveWinixSession } from "../winix/account";
-import { resolveWinixAuthState } from "../winix/auth";
 import {
   defaultWinixDeviceClient,
+  resolveWinixAuthState,
+  resolveWinixSession,
+  type FanSpeed,
+  type StoredWinixAuthState,
   type WinixDeviceClient,
-} from "../winix/device";
-import { WINIX_CONTROL_DEFAULTS } from "../winix/constants";
-import type {
-  FanSpeed,
-  StoredWinixAuthState,
-  WinixResolvedSession,
-} from "../winix/types";
+  type WinixResolvedSession,
+} from "winix-control-sdk";
 
 type WindowRow = {
   pm25_avg: number | null;
@@ -66,6 +63,15 @@ export type WinixControlRunResult =
   | { status: "success"; targetSpeed: FanSpeed; pm25Avg: number }
   | { status: "skipped_stale"; reason: string }
   | { status: "error"; reason: string };
+
+const WINIX_CONTROL_DEFAULTS = {
+  enabled: true,
+  dryRun: false,
+  deadbandUgm3: 2,
+  minDwellMinutes: 10,
+  minSamples5m: 3,
+  maxSampleAgeSeconds: 360,
+} as const;
 
 const QUERY_WINDOW_SQL = `
   SELECT

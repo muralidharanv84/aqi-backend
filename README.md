@@ -43,9 +43,9 @@ src/
   routes/                  # HTTP handlers
   cron/                    # Aggregation + Winix scheduled jobs
   utils/                   # Auth, parsing, CORS, time helpers
-  winix/                   # Winix auth/session/device integration
 
 db/schema.sql              # Full D1 schema
+../winix-control-sdk       # Shared Winix SDK package (published as winix-control-sdk)
 scripts/
   sync-d1-remote-to-local.sh
 
@@ -199,6 +199,12 @@ Each tick runs:
 ## Winix Automation
 
 The Winix control loop is optional and controlled by env vars.
+
+Core Winix API/auth/device logic comes from the external npm package
+`winix-control-sdk`; this repo keeps only deployment-specific orchestration,
+device targeting, and D1 persistence.
+PM2.5 thresholds, hysteresis behavior, and dwell policy are intentionally
+implemented in this repo (`src/cron/winixControl.ts`) as app-specific logic.
 
 ### Required secrets
 

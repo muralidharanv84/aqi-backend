@@ -5,9 +5,9 @@ This document explains how the Winix automation works end-to-end in Cloudflare W
 ## Files
 
 - `/Users/murali/code/aqi-backend/src/cron/winixControl.ts`
-- `/Users/murali/code/aqi-backend/src/winix/auth.ts`
-- `/Users/murali/code/aqi-backend/src/winix/account.ts`
-- `/Users/murali/code/aqi-backend/src/winix/device.ts`
+- `/Users/murali/code/winix-control-sdk/src/auth.ts`
+- `/Users/murali/code/winix-control-sdk/src/account.ts`
+- `/Users/murali/code/winix-control-sdk/src/device.ts`
 - `/Users/murali/code/aqi-backend/src/index.ts`
 - `/Users/murali/code/aqi-backend/db/schema.sql`
 
@@ -30,7 +30,7 @@ Only the Winix loop writes to the Winix tables.
 3. Reject stale windows when either:
    - `sample_count < WINIX_MIN_SAMPLES_5M`
    - latest sample age exceeds `WINIX_MAX_SAMPLE_AGE_SECONDS`
-4. Compute target speed:
+4. Compute target speed (in `/Users/murali/code/aqi-backend/src/cron/winixControl.ts`):
    - Base mapping: `<10 -> low`, `<20 -> medium`, `<=30 -> high`, `>30 -> turbo`
    - Hysteresis deadband around 10, 20, 30 via `WINIX_DEADBAND_UGM3`
    - Dwell lock (`WINIX_MIN_DWELL_MINUTES`) to suppress rapid toggles
@@ -48,7 +48,7 @@ When data is stale or any API step fails, the loop keeps the previous effective 
 
 ## Auth Flow (Detailed)
 
-Winix uses AWS Cognito and SRP. The implementation in `/Users/murali/code/aqi-backend/src/winix/auth.ts` is Worker-safe (Web Crypto + `fetch`, no Node runtime assumptions).
+Winix uses AWS Cognito and SRP. The implementation in `winix-control-sdk` (`/Users/murali/code/winix-control-sdk/src/auth.ts`) is Worker-safe (Web Crypto + `fetch`, no Node runtime assumptions).
 
 ### Why this code looks complex
 
@@ -80,7 +80,7 @@ This fallback is intentional because Winix app logins can invalidate existing se
 
 ## Device Session Flow
 
-After auth (`/Users/murali/code/aqi-backend/src/winix/account.ts`):
+After auth (`/Users/murali/code/winix-control-sdk/src/account.ts`):
 
 1. Build Winix UUID from JWT `sub`.
 2. `/registerUser`
@@ -88,7 +88,7 @@ After auth (`/Users/murali/code/aqi-backend/src/winix/account.ts`):
 4. `/getDeviceInfoList`
 5. Select all devices (or the configured subset via `WINIX_TARGET_DEVICE_IDS`) and control each.
 
-Device I/O (`/Users/murali/code/aqi-backend/src/winix/device.ts`):
+Device I/O (`/Users/murali/code/winix-control-sdk/src/device.ts`):
 
 - Read state: `GET /common/event/sttus/devices/{deviceId}`
 - Write attributes: `GET /common/control/devices/{deviceId}/A211/{attribute}:{value}`
