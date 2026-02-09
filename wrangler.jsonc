@@ -15,8 +15,8 @@
 		{
 			"binding": "DB",
 			"database_name": "aqi_db",
-			"database_id": "87882461-63d2-49c0-bb40-bbae12ea3ec8"
-			//"remote": true
+			"database_id": "87882461-63d2-49c0-bb40-bbae12ea3ec8",
+			"remote": true
 		}
 	],
 	"vars": {

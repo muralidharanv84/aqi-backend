@@ -6,6 +6,9 @@
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
+		"localflare": "npx localflare",
+		"db:sync:remote-to-local": "bash scripts/sync-d1-remote-to-local.sh",
+		"localflare:with-remote-d1": "npm run db:sync:remote-to-local && npx localflare",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"cf-typegen": "wrangler types"
