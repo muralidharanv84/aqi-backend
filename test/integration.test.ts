@@ -8,6 +8,10 @@ type LatestResponse = {
   device_id: string;
   ts: number;
   metrics: Record<string, number>;
+  fan_control: {
+    latest_event: unknown;
+    latest_error: unknown;
+  };
 };
 
 type RawSeries = {
@@ -81,6 +85,7 @@ describe("ingest + latest + series + aggregation integration", () => {
     expect(latest.device_id).toBe(deviceId);
     expect(latest.ts).toBe(1700000040);
     expect(latest.metrics).toEqual({ pm25_ugm3: 13.1, co2_ppm: 705 });
+    expect(latest.fan_control).toEqual({ latest_event: null, latest_error: null });
 
     const seriesRes = await SELF.fetch(
       `https://example.com/api/v1/devices/${deviceId}/series?metric=pm25_ugm3&from=1699999000&to=1700001000&resolution=raw`,

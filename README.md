@@ -130,9 +130,29 @@ Returns latest raw sample for a device:
   "metrics": {
     "pm25_ugm3": 18.2,
     "aqi_us": 63
+  },
+  "fan_control": {
+    "latest_event": {
+      "run_ts": 1766925000,
+      "status": "success",
+      "purifier_device_ids": ["purifier-lr"],
+      "speed": "medium",
+      "error_message": null
+    },
+    "latest_error": {
+      "run_ts": 1766924700,
+      "status": "error",
+      "message": "Auth failed",
+      "error_streak": 2
+    }
   }
 }
 ```
+
+
+`fan_control.latest_event` is the newest Winix control run for this monitor device.
+`fan_control.latest_error` is the newest error/skipped-stale run with an error message.
+If no Winix records exist for this monitor, both are `null`.
 
 ### `GET /api/v1/devices/:deviceId/series`
 
