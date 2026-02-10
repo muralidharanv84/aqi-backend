@@ -139,19 +139,14 @@ Returns latest raw sample for a device:
       "speed": "medium",
       "error_message": null
     },
-    "latest_error": {
-      "run_ts": 1766924700,
-      "status": "error",
-      "message": "Auth failed",
-      "error_streak": 2
-    }
+    "latest_error": null
   }
 }
 ```
 
 
 `fan_control.latest_event` is the newest Winix control run for this monitor device.
-`fan_control.latest_error` is the newest error/skipped-stale run with an error message.
+`fan_control.latest_error` is populated only when that newest run is `error` or `skipped_stale` with an error message.
 If no Winix records exist for this monitor, both are `null`.
 
 ### `GET /api/v1/devices/:deviceId/series`

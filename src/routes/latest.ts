@@ -83,18 +83,6 @@ export async function handleLatest(
     .bind(deviceId)
     .first<FanControlLogRow>();
 
-  const latestFanControlError = await env.DB
-    .prepare(
-      `SELECT run_ts, run_status, error_message, error_streak
-       FROM winix_control_log
-       WHERE monitor_device_id = ?
-         AND error_message IS NOT NULL
-       ORDER BY id DESC
-       LIMIT 1`,
-    )
-    .bind(deviceId)
-    .first<FanControlLogRow>();
-
   const fanControl: FanControlPayload = {
     latest_event: latestFanControl
       ? {
@@ -106,13 +94,15 @@ export async function handleLatest(
         }
       : null,
     latest_error:
-      latestFanControlError && latestFanControlError.error_message
+      latestFanControl &&
+      latestFanControl.run_status !== "success" &&
+      latestFanControl.error_message
         ? {
-            run_ts: latestFanControlError.run_ts,
+            run_ts: latestFanControl.run_ts,
             status:
-              latestFanControlError.run_status === "error" ? "error" : "skipped_stale",
-            message: latestFanControlError.error_message,
-            error_streak: latestFanControlError.error_streak,
+              latestFanControl.run_status === "error" ? "error" : "skipped_stale",
+            message: latestFanControl.error_message,
+            error_streak: latestFanControl.error_streak,
           }
         : null,
   };

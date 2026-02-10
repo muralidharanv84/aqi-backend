@@ -72,7 +72,7 @@ describe("latest endpoint", () => {
     });
   });
 
-  it("returns latest fan control event and latest fan control error for the monitor", async () => {
+  it("returns latest fan control event and only exposes error details from the latest run", async () => {
     const monitorDeviceId = "device-monitor";
     await insertDevice(env.DB, monitorDeviceId, "secret");
     await insertSample(env.DB, monitorDeviceId, 1700000300, { pm25_ugm3: 18.2 });
@@ -168,11 +168,71 @@ describe("latest endpoint", () => {
       speed: "medium",
       error_message: null,
     });
-    expect(body.fan_control.latest_error).toEqual({
-      run_ts: 1700000100,
+    expect(body.fan_control.latest_error).toBeNull();
+  });
+
+  it("returns latest_error when the latest control run itself failed", async () => {
+    const monitorDeviceId = "device-monitor-2";
+    await insertDevice(env.DB, monitorDeviceId, "secret");
+    await insertSample(env.DB, monitorDeviceId, 1700000400, { pm25_ugm3: 21.5 });
+
+    await env.DB
+      .prepare(
+        `INSERT INTO winix_control_log (
+          run_ts,
+          run_status,
+          monitor_device_id,
+          winix_device_id,
+          pm25_avg,
+          sample_count,
+          last_sample_ts,
+          previous_speed,
+          target_speed,
+          effective_speed,
+          speed_changed,
+          effective_change_ts,
+          error_streak,
+          error_message,
+          created_ts
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        1700000400,
+        "error",
+        monitorDeviceId,
+        "purifier-lr",
+        33.1,
+        4,
+        1700000380,
+        "high",
+        null,
+        "high",
+        0,
+        1700000300,
+        3,
+        "Token expired",
+        1700000400,
+      )
+      .run();
+
+    const res = await SELF.fetch(
+      `https://example.com/api/v1/devices/${monitorDeviceId}/latest`,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as LatestResponse;
+    expect(body.fan_control.latest_event).toEqual({
+      run_ts: 1700000400,
       status: "error",
-      message: "Auth failed",
-      error_streak: 2,
+      purifier_device_ids: ["purifier-lr"],
+      speed: "high",
+      error_message: "Token expired",
+    });
+    expect(body.fan_control.latest_error).toEqual({
+      run_ts: 1700000400,
+      status: "error",
+      message: "Token expired",
+      error_streak: 3,
     });
   });
 });
