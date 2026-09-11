@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS winix_auth_state (
     id                INTEGER PRIMARY KEY CHECK (id = 1),
     user_id           TEXT NOT NULL,
     access_token      TEXT NOT NULL,
+    id_token          TEXT,
     refresh_token     TEXT NOT NULL,
     access_expires_at INTEGER NOT NULL,
     updated_ts        INTEGER NOT NULL

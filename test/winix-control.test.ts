@@ -8,7 +8,7 @@ import {
   mapPm25ToSpeed,
 } from "../src/cron/winixControl";
 import type { Env } from "../src/env";
-import type { FanSpeed } from "winix-control-sdk";
+import type { FanSpeed } from "../src/winix/client";
 import { insertDevice, insertSample, resetDb } from "./utils/db";
 
 type ControlStateRow = {
@@ -29,6 +29,7 @@ type ControlStateRow = {
 type AuthStateRow = {
   user_id: string;
   access_token: string;
+  id_token: string | null;
   refresh_token: string;
   access_expires_at: number;
 };
@@ -134,6 +135,7 @@ describe("runWinixControlLoop", () => {
         auth: {
           userId: "u1",
           accessToken: "a1",
+          idToken: "id1",
           refreshToken: "r1",
           accessExpiresAt: nowTs + 3600,
         },
@@ -195,6 +197,7 @@ describe("runWinixControlLoop", () => {
       .first<AuthStateRow>();
     expect(authState?.user_id).toBe("u1");
     expect(authState?.access_token).toBe("a1");
+    expect(authState?.id_token).toBe("id1");
     expect(authState?.refresh_token).toBe("r1");
   });
 

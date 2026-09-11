@@ -45,7 +45,8 @@ src/
   utils/                   # Auth, parsing, CORS, time helpers
 
 db/schema.sql              # Full D1 schema
-../winix-control-sdk       # Shared Winix SDK package (published as winix-control-sdk)
+src/winix/client.ts        # Adapter for the current winix-api protocol
+db/migrations/            # Incremental upgrades for existing databases
 scripts/
   sync-d1-remote-to-local.sh
 
@@ -216,10 +217,14 @@ Each tick runs:
 The Winix control loop is optional and controlled by env vars.
 
 Core Winix API/auth/device logic comes from the external npm package
-`winix-control-sdk`; this repo keeps only deployment-specific orchestration,
+`winix-api`; this repo keeps only deployment-specific orchestration,
 device targeting, and D1 persistence.
 PM2.5 thresholds, hysteresis behavior, and dwell policy are intentionally
 implemented in this repo (`src/cron/winixControl.ts`) as app-specific logic.
+
+The adapter uses Winix's public Cognito client, encrypted mobile handshake,
+and account identity for control commands. The cached ID token is needed to
+resolve that identity. Old cached tokens fall back to a fresh login automatically.
 
 ### Required secrets
 
@@ -289,6 +294,14 @@ npm run localflare:with-remote-d1
 
 ## Deployment
 
+For an existing database created before the September 2026 Winix API update,
+apply this migration **once before deploying** (new databases using the full
+`db/schema.sql` already include this column):
+
+```bash
+npx wrangler d1 execute aqi_db --remote --file db/migrations/0001_winix_id_token.sql
+```
+
 ```bash
 npm run deploy
 ```
@@ -351,6 +364,8 @@ Coverage includes:
 - endpoint behavior (`ingest`, `latest`, `series`, `devices`, health, CORS)
 - aggregation logic across timezones
 - Winix control loop decisioning and persistence
+- Current Cognito refresh, encrypted mobile handshake, identity-based commands,
+  and HTTP-200 device rejection handling
 - scheduled job orchestration
 
 ## Useful Debug Queries

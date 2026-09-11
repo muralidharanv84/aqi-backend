@@ -1,13 +1,13 @@
 import type { Env } from "../env";
 import {
-  defaultWinixDeviceClient,
-  resolveWinixAuthState,
-  resolveWinixSession,
+  createWinixControlClient,
   type FanSpeed,
   type StoredWinixAuthState,
-  type WinixDeviceClient,
+  type WinixControlClient,
   type WinixResolvedSession,
-} from "winix-control-sdk";
+} from "../winix/client";
+
+export type { WinixControlClient } from "../winix/client";
 
 type WindowRow = {
   pm25_avg: number | null;
@@ -18,6 +18,7 @@ type WindowRow = {
 type AuthRow = {
   user_id: string;
   access_token: string;
+  id_token: string | null;
   refresh_token: string;
   access_expires_at: number;
 };
@@ -43,19 +44,6 @@ export interface WinixControlConfig {
   minDwellMinutes: number;
   minSamples5m: number;
   maxSampleAgeSeconds: number;
-}
-
-export interface WinixControlClient {
-  resolveSession(
-    username: string,
-    password: string,
-    storedAuth: StoredWinixAuthState | null,
-    nowSec: number,
-  ): Promise<WinixResolvedSession>;
-  getDeviceState(deviceId: string): ReturnType<WinixDeviceClient["getState"]>;
-  setPowerOn(deviceId: string): Promise<void>;
-  setModeManual(deviceId: string): Promise<void>;
-  setAirflow(deviceId: string, speed: FanSpeed): Promise<void>;
 }
 
 export type WinixControlRunResult =
@@ -86,7 +74,7 @@ const QUERY_WINDOW_SQL = `
 `;
 
 const GET_AUTH_SQL = `
-  SELECT user_id, access_token, refresh_token, access_expires_at
+  SELECT user_id, access_token, id_token, refresh_token, access_expires_at
   FROM winix_auth_state
   WHERE id = 1
 `;
@@ -96,13 +84,15 @@ const UPSERT_AUTH_SQL = `
     id,
     user_id,
     access_token,
+    id_token,
     refresh_token,
     access_expires_at,
     updated_ts
-  ) VALUES (1, ?, ?, ?, ?, ?)
+  ) VALUES (1, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     user_id = excluded.user_id,
     access_token = excluded.access_token,
+    id_token = excluded.id_token,
     refresh_token = excluded.refresh_token,
     access_expires_at = excluded.access_expires_at,
     updated_ts = excluded.updated_ts
@@ -318,6 +308,7 @@ async function readStoredAuthState(
   return {
     userId: row.user_id,
     accessToken: row.access_token,
+    idToken: row.id_token,
     refreshToken: row.refresh_token,
     accessExpiresAt: row.access_expires_at,
   };
@@ -333,6 +324,7 @@ async function writeStoredAuthState(
     .bind(
       auth.userId,
       auth.accessToken,
+      auth.idToken ?? null,
       auth.refreshToken,
       auth.accessExpiresAt,
       nowTs,
@@ -435,38 +427,10 @@ function joinDeviceIds(deviceIds: string[]): string | null {
   return deviceIds.join(",");
 }
 
-export const defaultWinixControlClient: WinixControlClient = {
-  async resolveSession(
-    username: string,
-    password: string,
-    storedAuth: StoredWinixAuthState | null,
-    nowSec: number,
-  ): Promise<WinixResolvedSession> {
-    // First attempt with stored auth (or refresh), then force full login if device fetch fails.
-    let auth = await resolveWinixAuthState(
-      username,
-      password,
-      storedAuth,
-      nowSec,
-    );
-
-    try {
-      return await resolveWinixSession(username, auth);
-    } catch {
-      auth = await resolveWinixAuthState(username, password, null, nowSec);
-      return resolveWinixSession(username, auth);
-    }
-  },
-  getDeviceState: defaultWinixDeviceClient.getState,
-  setPowerOn: defaultWinixDeviceClient.setPowerOn,
-  setModeManual: defaultWinixDeviceClient.setModeManual,
-  setAirflow: defaultWinixDeviceClient.setAirflow,
-};
-
 export async function runWinixControlLoop(
   env: Env,
   nowMs: number = Date.now(),
-  client: WinixControlClient = defaultWinixControlClient,
+  client: WinixControlClient = createWinixControlClient(),
 ): Promise<WinixControlRunResult> {
   // Single 5-minute control cycle:
   // 1) read PM2.5 window

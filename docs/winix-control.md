@@ -5,9 +5,7 @@ This document explains how the Winix automation works end-to-end in Cloudflare W
 ## Files
 
 - `/Users/murali/code/aqi-backend/src/cron/winixControl.ts`
-- `/Users/murali/code/winix-control-sdk/src/auth.ts`
-- `/Users/murali/code/winix-control-sdk/src/account.ts`
-- `/Users/murali/code/winix-control-sdk/src/device.ts`
+- `/Users/murali/code/aqi-backend/src/winix/client.ts`
 - `/Users/murali/code/aqi-backend/src/index.ts`
 - `/Users/murali/code/aqi-backend/db/schema.sql`
 
@@ -48,11 +46,18 @@ When data is stale or any API step fails, the loop keeps the previous effective 
 
 ## Auth Flow (Detailed)
 
-Winix uses AWS Cognito and SRP. The implementation in `winix-control-sdk` (`/Users/murali/code/winix-control-sdk/src/auth.ts`) is Worker-safe (Web Crypto + `fetch`, no Node runtime assumptions).
+Winix uses AWS Cognito and SRP. The implementation comes from `winix-api@2.0.2`,
+adapted in `src/winix/client.ts`. Wrangler aliases the AWS clients to their ESM
+entrypoints so the bundle consistently uses the browser/fetch implementations.
+Keep these aliases when updating dependencies, and verify the bundled Worker.
 
 ### Why this code looks complex
 
-SRP auth is a challenge/response protocol with large-integer math and multiple derived keys. Cognito also requires request-specific `SECRET_HASH` values, and Winix sessions may invalidate unexpectedly, so refresh and full-login fallback are both required.
+SRP auth is a challenge/response protocol with large-integer math and multiple
+derived keys. Winix rotated to a public Cognito client in April 2026, which does
+not use `SECRET_HASH`. The retired client fails with "User pool client does not
+exist." Refresh and full-login fallback are both required for old cached tokens
+and invalidated sessions.
 
 ### Login (`loginWithSrp`)
 
@@ -61,18 +66,21 @@ SRP auth is a challenge/response protocol with large-integer math and multiple d
 3. Parse `PASSWORD_VERIFIER` challenge (`SRP_B`, `SALT`, `SECRET_BLOCK`, `USER_ID_FOR_SRP`).
 4. Derive password key (HKDF over SRP shared secret).
 5. Sign challenge payload and call `RespondToAuthChallenge`.
-6. Extract tokens and JWT `sub` (`userId`) for downstream calls.
+6. Extract access, ID, and refresh tokens and JWT `sub` (`userId`). The ID token
+   is needed for the identity-pool lookup, and is cached alongside the access token.
 
 ### Refresh (`refreshAccessToken`)
 
 1. Call Cognito `InitiateAuth` with `REFRESH_TOKEN`.
 2. Keep existing refresh token, replace access token and expiry.
 
-Important nuance: refresh `SECRET_HASH` is computed with the Cognito `userId` (`sub`), not the email-style login username.
+The public client sends only the refresh token, without a client secret hash.
 
 ### Runtime token strategy (`resolveWinixAuthState`)
 
-1. Use stored token if still fresh (`WINIX_REFRESH_MARGIN_SECONDS` safety margin).
+1. Use stored tokens if an ID token exists and the access token has more than
+   10 minutes remaining. Database expiry is epoch seconds; the API library uses
+   milliseconds, so the adapter converts in both directions.
 2. Else try refresh.
 3. If refresh fails, do full SRP login.
 
@@ -80,18 +88,26 @@ This fallback is intentional because Winix app logins can invalidate existing se
 
 ## Device Session Flow
 
-After auth (`/Users/murali/code/winix-control-sdk/src/account.ts`):
+After auth (`winix-api`, through `src/winix/client.ts`):
 
 1. Build Winix UUID from JWT `sub`.
-2. `/registerUser`
-3. `/checkAccessToken`
-4. `/getDeviceInfoList`
-5. Select all devices (or the configured subset via `WINIX_TARGET_DEVICE_IDS`) and control each.
+2. Resolve the Cognito identity ID using the ID token.
+3. `/registerUser`, including the identity ID.
+4. `/init`
+5. `/checkAccessToken`, including the identity ID.
+6. `/getDeviceInfoList`
+7. Select all devices (or the configured subset via `WINIX_TARGET_DEVICE_IDS`) and control each.
 
-Device I/O (`/Users/murali/code/winix-control-sdk/src/device.ts`):
+Mobile requests and responses use the API library's AES-encrypted octet-stream
+protocol. Each control cycle creates its own device client with the resolved
+identity ID; mutable account session state is not shared between Worker requests.
+
+Device I/O (`winix-api`):
 
 - Read state: `GET /common/event/sttus/devices/{deviceId}`
-- Write attributes: `GET /common/control/devices/{deviceId}/A211/{attribute}:{value}`
+- Write attributes: `GET /common/control/devices/{deviceId}/{identityId}/{attribute}:{value}`
+- Device errors inside an HTTP 200 response (such as `device not connected`)
+  reject the command and are recorded as control failures.
 
 ## Persistence Model
 
@@ -99,6 +115,7 @@ Device I/O (`/Users/murali/code/winix-control-sdk/src/device.ts`):
 
 - `user_id`
 - `access_token`
+- `id_token` (nullable for legacy rows; refreshed automatically)
 - `refresh_token`
 - `access_expires_at`
 - `updated_ts`
@@ -147,9 +164,11 @@ LIMIT 50;
 
 ## Troubleshooting
 
-1. Repeated `error` rows with secret-hash errors:
+1. Repeated `error` rows with authentication errors:
    - verify `WINIX_USERNAME` and `WINIX_PASSWORD` secrets
    - ensure username casing exactly matches Winix login
+   - "User pool client does not exist" indicates a retired API client; updating
+     the password alone will not fix it
 2. Frequent `skipped_stale` rows:
    - verify monitor `device_id` and ingestion cadence
    - inspect `WINIX_MIN_SAMPLES_5M` and `WINIX_MAX_SAMPLE_AGE_SECONDS`

@@ -1,5 +1,10 @@
 # Winix SDK Migration Checklist
 
+Historical record of the February 2026 extraction. In September 2026 the backend
+replaced `winix-control-sdk` with `winix-api@2.0.2` because the former still used
+Winix's retired Cognito client and device protocol. See `winix-control.md` for
+the current integration and deployment migration.
+
 This document tracks migration from in-repo Winix modules to the shared
 `winix-control-sdk` package.
 
