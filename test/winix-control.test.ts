@@ -8,7 +8,7 @@ import {
   mapPm25ToSpeed,
 } from "../src/cron/winixControl";
 import type { Env } from "../src/env";
-import type { FanSpeed } from "../src/winix/client";
+import type { FanSpeed } from "winix-control-sdk";
 import { insertDevice, insertSample, resetDb } from "./utils/db";
 
 type ControlStateRow = {
@@ -94,7 +94,7 @@ describe("runWinixControlLoop", () => {
 
     const mockClient = {
       resolveSession: vi.fn(),
-      getDeviceState: vi.fn(),
+      getState: vi.fn(),
       setPowerOn: vi.fn(),
       setModeManual: vi.fn(),
       setAirflow: vi.fn(),
@@ -141,7 +141,7 @@ describe("runWinixControlLoop", () => {
         },
         devices: [{ deviceId: "device-1", alias: "Living Room", model: "T800" }],
       }),
-      getDeviceState: vi.fn().mockResolvedValue({
+      getState: vi.fn().mockResolvedValue({
         power: "off",
         mode: "auto",
         airflow: "low",
@@ -169,7 +169,7 @@ describe("runWinixControlLoop", () => {
     }
 
     expect(mockClient.resolveSession).toHaveBeenCalledTimes(1);
-    expect(mockClient.getDeviceState).toHaveBeenCalledTimes(1);
+    expect(mockClient.getState).toHaveBeenCalledTimes(1);
     expect(calls).toEqual([
       { method: "power" },
       { method: "manual" },
@@ -223,7 +223,7 @@ describe("runWinixControlLoop", () => {
           { deviceId: "device-2", alias: "Living Room 2", model: "T800" },
         ],
       }),
-      getDeviceState: vi.fn().mockResolvedValue({
+      getState: vi.fn().mockResolvedValue({
         power: "off",
         mode: "auto",
         airflow: "low",
@@ -241,7 +241,7 @@ describe("runWinixControlLoop", () => {
 
     const result = await runWinixControlLoop(controlEnv, nowTs * 1000, mockClient);
     expect(result.status).toBe("success");
-    expect(mockClient.getDeviceState).toHaveBeenCalledTimes(2);
+    expect(mockClient.getState).toHaveBeenCalledTimes(2);
     expect(calls).toEqual([
       { deviceId: "device-1", method: "power" },
       { deviceId: "device-1", method: "manual" },
@@ -280,7 +280,7 @@ describe("runWinixControlLoop", () => {
           { deviceId: "device-2", alias: "Living Room 2", model: "T800" },
         ],
       }),
-      getDeviceState: vi.fn().mockImplementation(async (deviceId: string) => {
+      getState: vi.fn().mockImplementation(async (deviceId: string) => {
         calls.push({ deviceId, method: "state" });
         return { power: "off", mode: "auto", airflow: "low" as FanSpeed };
       }),
@@ -320,7 +320,7 @@ describe("runWinixControlLoop", () => {
         },
         devices: [{ deviceId: "device-1", alias: "Living Room 1", model: "T800" }],
       }),
-      getDeviceState: vi.fn(),
+      getState: vi.fn(),
       setPowerOn: vi.fn(),
       setModeManual: vi.fn(),
       setAirflow: vi.fn(),
@@ -328,7 +328,7 @@ describe("runWinixControlLoop", () => {
 
     const result = await runWinixControlLoop(controlEnv, nowTs * 1000, mockClient);
     expect(result.status).toBe("error");
-    expect(mockClient.getDeviceState).toHaveBeenCalledTimes(0);
+    expect(mockClient.getState).toHaveBeenCalledTimes(0);
 
     const controlState = await controlEnv.DB
       .prepare("SELECT * FROM winix_control_log ORDER BY id DESC LIMIT 1")
@@ -356,7 +356,7 @@ describe("runWinixControlLoop", () => {
         },
         devices: [{ deviceId: "device-1", alias: "Living Room", model: "T800" }],
       }),
-      getDeviceState: vi.fn().mockResolvedValue({
+      getState: vi.fn().mockResolvedValue({
         power: "on",
         mode: "manual",
         airflow: "low",

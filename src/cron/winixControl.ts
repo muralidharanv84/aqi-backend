@@ -1,13 +1,9 @@
 import type { Env } from "../env";
 import {
   createWinixControlClient,
-  type FanSpeed,
-  type StoredWinixAuthState,
   type WinixControlClient,
-  type WinixResolvedSession,
 } from "../winix/client";
-
-export type { WinixControlClient } from "../winix/client";
+import type { FanSpeed, StoredWinixAuthState, WinixResolvedSession } from "winix-control-sdk";
 
 type WindowRow = {
   pm25_avg: number | null;
@@ -562,7 +558,7 @@ export async function runWinixControlLoop(
     if (!config.dryRun) {
       for (const deviceId of targetDeviceIds) {
         try {
-          const currentState = await client.getDeviceState(deviceId);
+          const currentState = await client.getState(deviceId);
           if (currentState.power !== "on") {
             await client.setPowerOn(deviceId);
           }

@@ -1,53 +1,34 @@
-# Winix SDK Migration Checklist
+# Winix SDK Integration
 
-Historical record of the February 2026 extraction. In September 2026 the backend
-replaced `winix-control-sdk` with `winix-api@2.0.2` because the former still used
-Winix's retired Cognito client and device protocol. See `winix-control.md` for
-the current integration and deployment migration.
+The backend uses our open-source `winix-control-sdk@0.3.0` for authentication,
+account discovery, and device commands. The SDK was extracted in February 2026;
+version 0.3.0 updates it for Winix's current cloud protocol and replaces the
+temporary `winix-api` workaround used during the September control outage.
 
-This document tracks migration from in-repo Winix modules to the shared
-`winix-control-sdk` package.
+## Ownership
 
-## Objectives
+- `winix-control-sdk`: public-client Cognito SRP and refresh, ID tokens, encrypted
+  mobile requests, identity lookup, device state and commands, and protocol tests.
+- `src/winix/client.ts`: one authenticated SDK client per control cycle and a
+  fresh-login retry if account session setup fails.
+- `src/cron/winixControl.ts`: sensor freshness, PM2.5 thresholds, hysteresis,
+  dwell policy, target selection, and D1 persistence.
 
-- Extract reusable Winix logic into a standalone package.
-- Keep this backend focused on app-specific control orchestration and D1 state.
-- Preserve control behavior and existing runtime env variable contracts.
+The SDK has no runtime dependencies and uses native fetch and Web Crypto in
+Cloudflare Workers. The backend no longer needs AWS client aliases or duplicate
+protocol and authentication implementations.
 
-## Extraction Status
+## Upgrading from SDK 0.2.x
 
-- [x] Reusable modules moved to `/Users/murali/code/winix-control-sdk`.
-- [x] Control helper functions remain in `aqi-backend` (`src/cron/winixControl.ts`) as app-specific logic.
-- [x] `aqi-backend` `runWinixControlLoop` imports from `winix-control-sdk`.
-- [x] In-repo `src/winix/*` files removed.
-- [x] Backend tests updated to import Winix types/auth APIs from package.
-- [x] Backend docs updated to reference package-backed implementation.
-- [x] Public GitHub repo created at `muralidharanv84/winix-control-sdk`.
-- [x] npm package published as `winix-control-sdk@0.2.0`.
+Version 0.3.0 replaces the shared `defaultWinixDeviceClient` with
+`createWinixDeviceClient(session.identityId)`. Auth state now includes an ID token;
+legacy cached state is refreshed or replaced through a full login automatically.
+Token expiry remains epoch seconds.
 
-## Behavior Parity Acceptance Criteria
+The backend requires the `id_token` column added by
+`db/migrations/0001_winix_id_token.sql`. Apply that migration once to older
+installations before deploying. It is already present in production.
 
-- [x] Token handling parity:
-  - Stored fresh token is reused.
-  - Expired token refresh is attempted.
-  - Refresh failure falls back to full login.
-- [x] Device control command order parity:
-  - Read state.
-  - Ensure `power on`.
-  - Ensure `manual mode`.
-  - Apply `target airflow`.
-- [x] Stale-window safety parity:
-  - Skip control when sample count is below threshold.
-  - Skip control when last sample age is above threshold.
-  - Persist `skipped_stale` log rows.
-- [x] D1 persistence parity:
-  - `winix_auth_state` remains source of cached auth.
-  - `winix_control_log` remains append-only run history.
-
-## Rollback Plan
-
-1. Revert `aqi-backend` to pre-migration commit where `src/winix/*` exists.
-2. Reinstall dependencies (`npm ci`) and rerun tests.
-3. Deploy rollback revision.
-4. If package-origin regression is identified, pin package to last known good
-   version before reattempting migration.
+See [Winix Control](winix-control.md) for configuration, persistence, and runtime
+verification, and the [SDK repository](https://github.com/muralidharanv84/winix-control-sdk)
+for the public API and release history.

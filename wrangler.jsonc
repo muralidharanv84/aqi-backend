@@ -8,12 +8,6 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2025-09-06",
 	"compatibility_flags": ["nodejs_compat"],
-	// winix-api uses CommonJS. Resolve its AWS clients to their browser-compatible
-	// ESM entrypoints so Workers uses fetch consistently throughout the SDK.
-	"alias": {
-		"@aws-sdk/client-cognito-identity-provider": "./node_modules/@aws-sdk/client-cognito-identity-provider/dist-es/index.js",
-		"@aws-sdk/client-cognito-identity": "./node_modules/@aws-sdk/client-cognito-identity/dist-es/index.js"
-	},
 	"observability": {
 		"enabled": true
 	},

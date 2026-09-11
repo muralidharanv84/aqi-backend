@@ -46,15 +46,15 @@ When data is stale or any API step fails, the loop keeps the previous effective 
 
 ## Auth Flow (Detailed)
 
-Winix uses AWS Cognito and SRP. The implementation comes from `winix-api@2.0.2`,
-adapted in `src/winix/client.ts`. Wrangler aliases the AWS clients to their ESM
-entrypoints so the bundle consistently uses the browser/fetch implementations.
-Keep these aliases when updating dependencies, and verify the bundled Worker.
+Winix uses AWS Cognito and SRP. The implementation comes from our open-source
+`winix-control-sdk@0.3.0`, with per-cycle session glue in `src/winix/client.ts`.
+The SDK uses native fetch and Web Crypto, has no runtime dependencies, and
+requires no bundler aliases.
 
 ### Why this code looks complex
 
 SRP auth is a challenge/response protocol with large-integer math and multiple
-derived keys. Winix rotated to a public Cognito client in April 2026, which does
+derived keys. Winix now uses a public Cognito client, which does
 not use `SECRET_HASH`. The retired client fails with "User pool client does not
 exist." Refresh and full-login fallback are both required for old cached tokens
 and invalidated sessions.
@@ -72,15 +72,14 @@ and invalidated sessions.
 ### Refresh (`refreshAccessToken`)
 
 1. Call Cognito `InitiateAuth` with `REFRESH_TOKEN`.
-2. Keep existing refresh token, replace access token and expiry.
+2. Keep the existing refresh token; replace the access token, ID token, and expiry.
 
 The public client sends only the refresh token, without a client secret hash.
 
 ### Runtime token strategy (`resolveWinixAuthState`)
 
 1. Use stored tokens if an ID token exists and the access token has more than
-   10 minutes remaining. Database expiry is epoch seconds; the API library uses
-   milliseconds, so the adapter converts in both directions.
+   10 minutes remaining. Both the SDK and database use epoch seconds for expiry.
 2. Else try refresh.
 3. If refresh fails, do full SRP login.
 
@@ -88,7 +87,7 @@ This fallback is intentional because Winix app logins can invalidate existing se
 
 ## Device Session Flow
 
-After auth (`winix-api`, through `src/winix/client.ts`):
+After auth (`winix-control-sdk`, through `src/winix/client.ts`):
 
 1. Build Winix UUID from JWT `sub`.
 2. Resolve the Cognito identity ID using the ID token.
@@ -98,11 +97,11 @@ After auth (`winix-api`, through `src/winix/client.ts`):
 6. `/getDeviceInfoList`
 7. Select all devices (or the configured subset via `WINIX_TARGET_DEVICE_IDS`) and control each.
 
-Mobile requests and responses use the API library's AES-encrypted octet-stream
+Mobile requests and responses use the SDK's AES-encrypted octet-stream
 protocol. Each control cycle creates its own device client with the resolved
 identity ID; mutable account session state is not shared between Worker requests.
 
-Device I/O (`winix-api`):
+Device I/O (`winix-control-sdk`):
 
 - Read state: `GET /common/event/sttus/devices/{deviceId}`
 - Write attributes: `GET /common/control/devices/{deviceId}/{identityId}/{attribute}:{value}`

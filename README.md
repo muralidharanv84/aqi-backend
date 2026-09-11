@@ -45,7 +45,7 @@ src/
   utils/                   # Auth, parsing, CORS, time helpers
 
 db/schema.sql              # Full D1 schema
-src/winix/client.ts        # Adapter for the current winix-api protocol
+src/winix/client.ts        # Session glue for winix-control-sdk
 db/migrations/            # Incremental upgrades for existing databases
 scripts/
   sync-d1-remote-to-local.sh
@@ -217,12 +217,12 @@ Each tick runs:
 The Winix control loop is optional and controlled by env vars.
 
 Core Winix API/auth/device logic comes from the external npm package
-`winix-api`; this repo keeps only deployment-specific orchestration,
+`winix-control-sdk@0.3.0`; this repo keeps only deployment-specific orchestration,
 device targeting, and D1 persistence.
 PM2.5 thresholds, hysteresis behavior, and dwell policy are intentionally
 implemented in this repo (`src/cron/winixControl.ts`) as app-specific logic.
 
-The adapter uses Winix's public Cognito client, encrypted mobile handshake,
+The SDK uses Winix's public Cognito client, encrypted mobile handshake,
 and account identity for control commands. The cached ID token is needed to
 resolve that identity. Old cached tokens fall back to a fresh login automatically.
 

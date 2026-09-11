@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WinixAuth } from "winix-api";
+import { defaultWinixAuthProvider } from "winix-control-sdk";
 import { env, fetchMock } from "cloudflare:test";
-import { Buffer } from "node:buffer";
-import { encrypt } from "winix-api/dist/account/winix-crypto";
-import { createWinixControlClient, resolveWinixAuthState } from "../src/winix/client";
+import { createWinixControlClient } from "../src/winix/client";
 import { runWinixControlLoop } from "../src/cron/winixControl";
 import { insertDevice, insertSample, resetDb } from "./utils/db";
 
 const identityId = "us-east-1:11111111-1111-1111-1111-111111111111";
-const accessToken = `${Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url")}.${Buffer.from(JSON.stringify({ sub: "user-1" })).toString("base64url")}.signature`;
+const accessToken = `header.${btoa(JSON.stringify({ sub: "user-1" }))}.signature`;
+// Encrypted Winix device-list response; crypto/protocol fixtures are tested in the SDK.
+const encryptedDevices = Uint8Array.from(atob("TCsuaDLdM7GJlXxRBxafCFSwAkX8mXVC9lUnoNxPFpEbje3qnJpEeQeT2MGEswfGLQvTBVmffFSU6O1O0EtgeTPsUE5EJLlm2An75Gv3ef/dz8vHZap1IhH7oQm9Hack"), (char) => char.charCodeAt(0));
 
 describe("Winix protocol in the Worker runtime", () => {
   beforeEach(async () => {
-    vi.spyOn(WinixAuth, "login").mockRejectedValue(new Error("Unexpected full login"));
+    vi.spyOn(defaultWinixAuthProvider, "login").mockRejectedValue(new Error("Unexpected full login"));
     fetchMock.activate();
     fetchMock.disableNetConnect();
     await resetDb(env.DB);
@@ -50,7 +50,7 @@ describe("Winix protocol in the Worker runtime", () => {
         .intercept({ path, method: "POST", headers: { "content-type": "application/octet-stream" } })
         .reply(200, () => {
           calls.push(path);
-          return encrypt({ resultCode: "200", deviceInfoList: [{ deviceId: "purifier-1" }, { deviceId: "purifier-2" }] });
+          return encryptedDevices;
         }, { headers: { "content-type": "application/octet-stream" } });
     }
 
@@ -90,29 +90,8 @@ describe("Winix protocol in the Worker runtime", () => {
     else expect(row?.error_message).toBeNull();
   });
 
-  it("requires a resolved session before sending commands", async () => {
-    await expect(createWinixControlClient().setAirflow("purifier-1", "high"))
-      .rejects.toThrow("session has not been resolved");
-  });
-
-  it("refreshes with the current public Cognito client and persists expiry in seconds", async () => {
-    const nowTs = Math.floor(Date.now() / 1000);
-    fetchMock.get("https://cognito-idp.us-east-1.amazonaws.com")
-      .intercept({ path: "/", method: "POST" })
-      .reply(200, (request) => {
-        const body = JSON.parse(String(request.body));
-        expect(body.ClientId).toBe("5rjk59c5tt7k9g8gpj0vd2qfg9");
-        expect(body.AuthParameters).toEqual({ REFRESH_TOKEN: "refresh-token" });
-        return { AuthenticationResult: { AccessToken: accessToken, IdToken: "new-id-token", ExpiresIn: 3600 } };
-      });
-
-    const auth = await resolveWinixAuthState("user@example.com", "password", {
-      userId: "user-1", accessToken, refreshToken: "refresh-token", accessExpiresAt: nowTs,
-    }, nowTs);
-
-    expect(auth.idToken).toBe("new-id-token");
-    expect(auth.accessExpiresAt).toBeGreaterThanOrEqual(nowTs + 3600);
-    expect(auth.accessExpiresAt).toBeLessThanOrEqual(nowTs + 3605);
-    expect(WinixAuth.login).not.toHaveBeenCalled();
+  it("requires a resolved session before sending commands", () => {
+    expect(() => createWinixControlClient().setAirflow("purifier-1", "high"))
+      .toThrow("session has not been resolved");
   });
 });
