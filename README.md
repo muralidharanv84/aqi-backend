@@ -164,7 +164,11 @@ Query params:
 - `metric`: one of supported metric fields
 - `from`: epoch seconds (inclusive)
 - `to`: epoch seconds (inclusive)
-- `resolution`: `raw` or `1h`
+- `resolution`: `raw`, `5m`, `1h`, `1d`, `1w`, `1mo`, or `auto`
+
+Five-minute averages read raw samples; daily, weekly, and monthly summaries are computed in D1 from existing hourly rollups. They return `ts`, `avg`, `min`, `max`, and `n`; averages are weighted by each hourly row's stored sample count. No new tables or scheduled jobs are needed. Calendar boundaries use UTC days, Monday-starting weeks, and calendar months. Partial boundary periods only include rows within the requested bounds. Both `raw` and `5m` requests are limited to 14 days.
+
+`auto` selects hourly summaries through 14 days, daily through 90 days, weekly through 730 days, and monthly beyond that. With `from=0` (All time), it uses the device's first and last recorded hourly timestamps instead of the Unix epoch, consistently across metrics. The response's `resolution` identifies the actual interval used.
 
 Examples:
 

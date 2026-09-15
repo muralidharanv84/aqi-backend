@@ -1,9 +1,29 @@
 import { METRIC_FIELDS, type MetricField } from "./metrics";
 
-export type SeriesResolution = "raw" | "1h";
+export type SeriesResolution = "raw" | "5m" | "1h" | "1d" | "1w" | "1mo";
+export type SeriesResolutionRequest = SeriesResolution | "auto";
 
-const ALLOWED_RESOLUTIONS = new Set<SeriesResolution>(["raw", "1h"]);
+const ALLOWED_RESOLUTIONS = new Set<SeriesResolutionRequest>(["raw", "5m", "1h", "1d", "1w", "1mo", "auto"]);
 const MAX_RAW_RANGE_SECONDS = 14 * 24 * 60 * 60;
+
+export function chooseAggregateResolution(from: number, to: number): Exclude<SeriesResolution, "raw" | "5m"> {
+  const days = (to - from) / 86400;
+  if (days <= 14) return "1h";
+  if (days <= 90) return "1d";
+  if (days <= 730) return "1w";
+  return "1mo";
+}
+
+// Calendar boundaries are UTC; weeks start on Monday. Only trusted SQL fragments
+// from this map and the metric allowlist are interpolated into queries.
+export function aggregateBucketSql(resolution: Exclude<SeriesResolution, "raw" | "5m" | "1h">): string {
+  const modifiers = {
+    "1d": "'start of day'",
+    "1w": "'-6 days', 'weekday 1', 'start of day'",
+    "1mo": "'start of month'",
+  };
+  return `CAST(strftime('%s', hour_ts, 'unixepoch', ${modifiers[resolution]}) AS INTEGER)`;
+}
 
 const METRIC_SET = new Set<string>(METRIC_FIELDS);
 
@@ -24,7 +44,7 @@ const HOURLY_COLUMN_MAP: Record<
 
 export function parseSeriesQuery(url: URL): {
   metric: MetricField;
-  resolution: SeriesResolution;
+  resolution: SeriesResolutionRequest;
   from: number;
   to: number;
 } | { error: string } {
@@ -34,7 +54,7 @@ export function parseSeriesQuery(url: URL): {
   const toRaw = url.searchParams.get("to");
 
   if (!metric || !METRIC_SET.has(metric)) return { error: "Invalid metric" };
-  if (!resolution || !ALLOWED_RESOLUTIONS.has(resolution as SeriesResolution)) {
+  if (!resolution || !ALLOWED_RESOLUTIONS.has(resolution as SeriesResolutionRequest)) {
     return { error: "Invalid resolution" };
   }
   if (!fromRaw || !toRaw) return { error: "Missing time bounds" };
@@ -50,13 +70,13 @@ export function parseSeriesQuery(url: URL): {
   }
   if (from > to) return { error: "Invalid time bounds" };
 
-  if (resolution === "raw" && to - from > MAX_RAW_RANGE_SECONDS) {
-    return { error: "Raw range too large" };
+  if ((resolution === "raw" || resolution === "5m") && to - from > MAX_RAW_RANGE_SECONDS) {
+    return { error: resolution === "raw" ? "Raw range too large" : "5m range too large" };
   }
 
   return {
     metric: metric as MetricField,
-    resolution: resolution as SeriesResolution,
+    resolution: resolution as SeriesResolutionRequest,
     from,
     to,
   };
