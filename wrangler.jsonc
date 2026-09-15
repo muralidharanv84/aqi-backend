@@ -7,6 +7,7 @@
 	"name": "aqi-backend",
 	"main": "src/index.ts",
 	"workers_dev": true,
+	"preview_urls": false,
 	"routes": [
 		{ "pattern": "aqi-backend.murali.page", "custom_domain": true },
 		{ "pattern": "aqi-backend.orangeiqlabs.com/*", "zone_name": "orangeiqlabs.com" }
