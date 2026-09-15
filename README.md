@@ -192,7 +192,8 @@ DB ping endpoint:
 
 Allowed origins:
 
-- `https://aqi.orangeiqlabs.com`
+- `https://aqi.murali.page`
+- `https://aqi.orangeiqlabs.com` (legacy clients during migration)
 - `https://aqi-web.pages.dev`
 - `https://*.aqi-web.pages.dev` (preview subdomains over HTTPS)
 - `http://localhost:3000`
@@ -423,3 +424,11 @@ LIMIT 50;
 - Signed ingest timestamps are server-generated and minute-bucketed. Outdoor polls use the upstream UTC observation timestamp, also minute-bucketed.
 - `POST /api/v1/ingest` consumes the raw request body for signature verification before JSON parsing.
 - Unknown metric fields intentionally fail fast with `400` to protect schema/API consistency.
+
+## Production domains
+
+- API: `https://aqi-backend.murali.page`
+- Dashboard: `https://aqi.murali.page`
+- `aqi-backend.orangeiqlabs.com` remains attached as a legacy Worker route and returns **308 Permanent Redirect** to the new API, preserving paths and query strings. A 308 preserves the HTTP method and signed POST body. OPTIONS preflight continues to return CORS headers directly.
+- New device configurations should use `https://aqi-backend.murali.page/api/v1/ingest`. Existing CircuitPython clients follow redirects with their method, body, and signature headers preserved.
+- Both API domain bindings are declared in `wrangler.jsonc`. The existing D1 database, secrets, and cron schedules continue to be used.

@@ -52,6 +52,18 @@ export async function handleRequest(req: Request, env: Env): Promise<Response> {
 
   const url = new URL(req.url);
 
+  // Permanent migration: 308 preserves signed device POST bodies and methods.
+  // Handle preflight above so browser clients can follow the actual redirect.
+  if (url.hostname === "aqi-backend.orangeiqlabs.com") {
+    url.protocol = "https:";
+    url.hostname = "aqi-backend.murali.page";
+    url.port = "";
+    return withCors(req, new Response(null, {
+      status: 308,
+      headers: { Location: url.toString() },
+    }));
+  }
+
   if (req.method === "GET" && url.pathname === "/api/v1/health") {
     return withCors(req, handleHealth());
   }

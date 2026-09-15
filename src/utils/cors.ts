@@ -1,4 +1,5 @@
 const ALLOWED_ORIGINS = new Set([
+  "https://aqi.murali.page",
   "https://aqi.orangeiqlabs.com",
   "http://localhost:3000",
   "http://localhost:5173",
