@@ -9,6 +9,7 @@ Cloudflare Workers + D1 backend for air-quality ingestion, querying, hourly aggr
 - Serves latest readings and time-series data for dashboards
 - Aggregates completed hourly windows into `samples_hourly`
 - Optionally controls Winix purifier fan speed from PM2.5 trends every 5 minutes
+- Polls the AQI.in outdoor monitor every 10 minutes into `bellezea-outdoor`, calculating AQI from PM2.5 with the custom-monitor algorithm
 
 ## Architecture
 
@@ -24,6 +25,10 @@ Cron (every 5 min)
   -> aggregateCompletedHours()
   -> runWinixControlLoop()
   -> enforceWinixControlLogRetention()
+
+Cron (every 10 min)
+  -> runAqiInPoll()
+  -> D1 samples for bellezea-outdoor
 ```
 
 Core entrypoint: `src/index.ts`
@@ -100,6 +105,8 @@ Required headers:
 Allowed metric fields:
 
 - `pm25_ugm3`
+- `pm10_ugm3`
+- `noise_db`
 - `aqi_us` (must be integer)
 - `co2_ppm`
 - `voc_ppm`
@@ -191,15 +198,15 @@ Allowed request headers:
 
 - `Content-Type, X-Device-Id, X-Signature`
 
-## Scheduled Jobs (Every 5 Minutes)
+## Scheduled Jobs
 
 Configured in `wrangler.jsonc`:
 
 ```json
-"triggers": { "crons": ["*/5 * * * *"] }
+"triggers": { "crons": ["*/5 * * * *", "*/10 * * * *"] }
 ```
 
-Each tick runs:
+The five-minute tick runs:
 
 1. `aggregateCompletedHours(env, nowMs)`
 2. `runWinixControlLoop(env, nowMs)`
@@ -211,6 +218,18 @@ Each tick runs:
 - Aggregates the **last completed local hour** from `samples_raw`
 - Upserts aggregate into `samples_hourly`
 - Skips devices with zero samples in that window
+
+## AQI.in Outdoor Monitor Access
+
+The ten-minute cron fetches Muthanallur readings and stores them as
+`bellezea-outdoor`. It retains PM2.5, PM10, noise, and TVOC; US AQI is calculated
+from PM2.5 using the same breakpoints and rounding as the custom-monitor firmware.
+Provider AQI values are discarded. Offline readings and snapshots older than 30
+minutes are skipped; repeated source timestamps are idempotent.
+
+PM10 and noise are supported by the latest/series APIs and hourly rollups.
+Setup, migration, and source behavior are in [docs/aqi-in-access.md](docs/aqi-in-access.md).
+Run `npm run aqi:probe` for the live upstream sensor readings.
 
 ## Winix Automation
 
@@ -302,6 +321,12 @@ apply this migration **once before deploying** (new databases using the full
 npx wrangler d1 execute aqi_db --remote --file db/migrations/0001_winix_id_token.sql
 ```
 
+For an existing database, also apply the outdoor monitor migration once:
+
+```bash
+npx wrangler d1 execute aqi_db --remote --file db/migrations/0002_aqi_in_outdoor.sql
+```
+
 ```bash
 npm run deploy
 ```
@@ -391,6 +416,6 @@ LIMIT 50;
 
 ## Notes
 
-- Ingest timestamps are server-generated and minute-bucketed.
+- Signed ingest timestamps are server-generated and minute-bucketed. Outdoor polls use the upstream UTC observation timestamp, also minute-bucketed.
 - `POST /api/v1/ingest` consumes the raw request body for signature verification before JSON parsing.
 - Unknown metric fields intentionally fail fast with `400` to protect schema/API consistency.

@@ -7,9 +7,11 @@ CREATE TABLE IF NOT EXISTS devices (
 
 CREATE TABLE IF NOT EXISTS samples_raw (
     device_id     TEXT NOT NULL,
-    ts            INTEGER NOT NULL,   -- server time, epoch seconds (minute-bucketed)
+    ts            INTEGER NOT NULL,   -- epoch seconds (minute-bucketed); source time for polled data
 
     pm25_ugm3     REAL,
+    pm10_ugm3     REAL,
+    noise_db      REAL,
     aqi_us        INTEGER,
 
     co2_ppm       REAL,
@@ -34,6 +36,13 @@ CREATE TABLE IF NOT EXISTS samples_hourly (
     pm25_avg      REAL,
     pm25_min      REAL,
     pm25_max      REAL,
+
+    pm10_avg      REAL,
+    pm10_min      REAL,
+    pm10_max      REAL,
+    noise_avg     REAL,
+    noise_min     REAL,
+    noise_max     REAL,
 
     aqi_avg       REAL,
     aqi_min       INTEGER,
@@ -102,3 +111,8 @@ CREATE INDEX IF NOT EXISTS idx_winix_control_log_run_ts
 
 CREATE INDEX IF NOT EXISTS idx_winix_control_log_status_run_ts
     ON winix_control_log(run_status, run_ts DESC);
+
+-- Worker-managed outdoor source; signed ingest is disabled with an empty key.
+INSERT INTO devices (device_id, secret_hash, timezone)
+VALUES ('bellezea-outdoor', '', 'Asia/Kolkata')
+ON CONFLICT(device_id) DO NOTHING;

@@ -5,6 +5,8 @@ type SampleRow = {
   device_id: string;
   ts: number;
   pm25_ugm3: number | null;
+  pm10_ugm3: number | null;
+  noise_db: number | null;
   aqi_us: number | null;
   co2_ppm: number | null;
   voc_ppm: number | null;

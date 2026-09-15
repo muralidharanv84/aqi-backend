@@ -11,6 +11,12 @@ type AggregateRow = {
   pm25_avg: number | null;
   pm25_min: number | null;
   pm25_max: number | null;
+  pm10_avg: number | null;
+  pm10_min: number | null;
+  pm10_max: number | null;
+  noise_avg: number | null;
+  noise_min: number | null;
+  noise_max: number | null;
   aqi_avg: number | null;
   aqi_min: number | null;
   aqi_max: number | null;
@@ -37,6 +43,12 @@ const AGGREGATE_SQL = `
     AVG(pm25_ugm3) AS pm25_avg,
     MIN(pm25_ugm3) AS pm25_min,
     MAX(pm25_ugm3) AS pm25_max,
+    AVG(pm10_ugm3) AS pm10_avg,
+    MIN(pm10_ugm3) AS pm10_min,
+    MAX(pm10_ugm3) AS pm10_max,
+    AVG(noise_db) AS noise_avg,
+    MIN(noise_db) AS noise_min,
+    MAX(noise_db) AS noise_max,
     AVG(aqi_us) AS aqi_avg,
     MIN(aqi_us) AS aqi_min,
     MAX(aqi_us) AS aqi_max,
@@ -68,6 +80,12 @@ const UPSERT_SQL = `
     pm25_avg,
     pm25_min,
     pm25_max,
+    pm10_avg,
+    pm10_min,
+    pm10_max,
+    noise_avg,
+    noise_min,
+    noise_max,
     aqi_avg,
     aqi_min,
     aqi_max,
@@ -87,11 +105,17 @@ const UPSERT_SQL = `
     rh_min,
     rh_max,
     n
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(device_id, hour_ts) DO UPDATE SET
     pm25_avg = excluded.pm25_avg,
     pm25_min = excluded.pm25_min,
     pm25_max = excluded.pm25_max,
+    pm10_avg = excluded.pm10_avg,
+    pm10_min = excluded.pm10_min,
+    pm10_max = excluded.pm10_max,
+    noise_avg = excluded.noise_avg,
+    noise_min = excluded.noise_min,
+    noise_max = excluded.noise_max,
     aqi_avg = excluded.aqi_avg,
     aqi_min = excluded.aqi_min,
     aqi_max = excluded.aqi_max,
@@ -139,6 +163,12 @@ export async function aggregateCompletedHours(
         aggregate.pm25_avg,
         aggregate.pm25_min,
         aggregate.pm25_max,
+        aggregate.pm10_avg,
+        aggregate.pm10_min,
+        aggregate.pm10_max,
+        aggregate.noise_avg,
+        aggregate.noise_min,
+        aggregate.noise_max,
         aggregate.aqi_avg,
         aggregate.aqi_min,
         aggregate.aqi_max,

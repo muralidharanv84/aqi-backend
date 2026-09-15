@@ -1,5 +1,7 @@
 export const METRIC_FIELDS = [
   "pm25_ugm3",
+  "pm10_ugm3",
+  "noise_db",
   "aqi_us",
   "co2_ppm",
   "voc_ppm",

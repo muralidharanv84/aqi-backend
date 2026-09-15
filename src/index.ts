@@ -1,5 +1,6 @@
 import type { Env } from "./env";
 import { aggregateCompletedHours } from "./cron/aggregate";
+import { AQI_IN_CRON, runAqiInPoll } from "./cron/aqiIn";
 import {
   enforceWinixControlLogRetention,
   runWinixControlLoop,
@@ -14,15 +15,21 @@ import { corsHeaders, withCors } from "./utils/cors";
 
 export default {
   fetch: (req: Request, env: Env) => handleRequest(req, env),
-  scheduled: (_event: ScheduledController, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(runScheduledJobs(env));
+  scheduled: (event: ScheduledController, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(runScheduledJobs(env, Date.now(), event.cron));
   },
 };
 
 export async function runScheduledJobs(
   env: Env,
   nowMs: number = Date.now(),
+  cron: string = "*/5 * * * *",
 ): Promise<void> {
+  if (cron === AQI_IN_CRON) {
+    // Let failures reach Cloudflare's scheduled-event status. No immediate retry loop.
+    await runAqiInPoll(env, nowMs);
+    return;
+  }
   const results = await Promise.allSettled([
     aggregateCompletedHours(env, nowMs),
     runWinixControlLoop(env, nowMs),

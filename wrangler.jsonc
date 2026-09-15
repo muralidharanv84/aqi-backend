@@ -30,7 +30,7 @@
 		"WINIX_DRY_RUN": "false"
 	},
 	"triggers": {
-		"crons": ["*/5 * * * *"]
+		"crons": ["*/5 * * * *", "*/10 * * * *"]
 	}
 	/**
 	 * Smart Placement

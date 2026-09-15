@@ -12,6 +12,8 @@ const HOURLY_COLUMN_MAP: Record<
   { avg: string; min: string; max: string }
 > = {
   pm25_ugm3: { avg: "pm25_avg", min: "pm25_min", max: "pm25_max" },
+  pm10_ugm3: { avg: "pm10_avg", min: "pm10_min", max: "pm10_max" },
+  noise_db: { avg: "noise_avg", min: "noise_min", max: "noise_max" },
   aqi_us: { avg: "aqi_avg", min: "aqi_min", max: "aqi_max" },
   co2_ppm: { avg: "co2_avg", min: "co2_min", max: "co2_max" },
   voc_ppm: { avg: "voc_ppm_avg", min: "voc_ppm_min", max: "voc_ppm_max" },
