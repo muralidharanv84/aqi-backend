@@ -15,6 +15,8 @@ export interface AqiReading {
   fetchedAt: string;
   online: boolean;
   metrics: {
+    temp_c?: number | null;
+    rh_pct?: number | null;
     pm25_ugm3: number;
     pm10_ugm3: number | null;
     noise_db: number | null;
@@ -22,13 +24,13 @@ export interface AqiReading {
   };
 }
 
-type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function readBounded(response: Response): Promise<string> {
+export async function readBounded(response: Response): Promise<string> {
   if (!response.body) throw new Error("AQI returned an empty response");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

@@ -1,3 +1,5 @@
+import { handleAqiAdmin } from "./aqi-in/admin";
+export { AqiSession } from "./aqi-in/durable";
 import type { Env } from "./env";
 import { aggregateCompletedHours } from "./cron/aggregate";
 import { AQI_IN_CRON, runAqiInPoll } from "./cron/aqiIn";
@@ -30,6 +32,7 @@ export async function runScheduledJobs(
     await runAqiInPoll(env, nowMs);
     return;
   }
+  if (cron !== "*/5 * * * *") return;
   const results = await Promise.allSettled([
     aggregateCompletedHours(env, nowMs),
     runWinixControlLoop(env, nowMs),
@@ -44,6 +47,7 @@ export async function runScheduledJobs(
 }
 
 export async function handleRequest(req: Request, env: Env): Promise<Response> {
+  if (new URL(req.url).pathname.startsWith("/internal/aqi/")) return handleAqiAdmin(req, env);
   // Preflight
   if (req.method === "OPTIONS") {
     const origin = req.headers.get("Origin");

@@ -9,7 +9,7 @@ Cloudflare Workers + D1 backend for air-quality ingestion, querying, hourly aggr
 - Serves latest readings and time-series data for dashboards
 - Aggregates completed hourly windows into `samples_hourly`
 - Optionally controls Winix purifier fan speed from PM2.5 trends every 5 minutes
-- Polls the AQI.in outdoor monitor every 10 minutes into `bellezea-outdoor`, calculating AQI from PM2.5 with the custom-monitor algorithm
+- Polls the AQI.in outdoor monitor every minute into `bellezea-outdoor`, calculating AQI from PM2.5 with the custom-monitor algorithm
 
 ## Architecture
 
@@ -26,7 +26,7 @@ Cron (every 5 min)
   -> runWinixControlLoop()
   -> enforceWinixControlLogRetention()
 
-Cron (every 10 min)
+Cron (every minute)
   -> runAqiInPoll()
   -> D1 samples for bellezea-outdoor
 ```
@@ -208,7 +208,7 @@ Allowed request headers:
 Configured in `wrangler.jsonc`:
 
 ```json
-"triggers": { "crons": ["*/5 * * * *", "*/10 * * * *"] }
+"triggers": { "crons": ["*/5 * * * *", "* * * * *"] }
 ```
 
 The five-minute tick runs:
@@ -226,15 +226,26 @@ The five-minute tick runs:
 
 ## AQI.in Outdoor Monitor Access
 
-The ten-minute cron fetches Muthanallur readings and stores them as
-`bellezea-outdoor`. It retains PM2.5, PM10, noise, and TVOC; US AQI is calculated
-from PM2.5 using the same breakpoints and rounding as the custom-monitor firmware.
-Provider AQI values are discarded. Offline readings and snapshots older than 30
-minutes are skipped; repeated source timestamps are idempotent.
+The one-minute cron fetches authenticated Muthanallur device readings and stores
+`bellezea-outdoor`: PM2.5, PM10, noise, TVOC, temperature, and humidity. US AQI
+continues to use the custom-monitor firmware calculation.
 
-PM10 and noise are supported by the latest/series APIs and hourly rollups.
-Setup, migration, and source behavior are in [docs/aqi-in-access.md](docs/aqi-in-access.md).
-Run `npm run aqi:probe` for the live upstream sensor readings.
+A single Durable Object stores and serializes the rotating AQI account token.
+It renews daily (or earlier for short-lived tokens). Authentication failures use
+the public snapshot as fallback, polled at most every ten minutes; original source
+timestamps are retained and fallback cannot replace a same-minute private sample.
+Private readings older than five minutes and public readings older than thirty
+minutes are skipped. Public fallback does not supply device temperature/humidity.
+
+Persistent authentication failures trigger email to `muralidharan@gmail.com` after
+15 minutes and at least three failed checks, then at most once per day until
+successful account access is restored. Email uses the existing verified personal
+alert sender on Cloudflare. Upstream data/transport errors alone do not trigger
+authentication reminders.
+
+See [docs/aqi-in-access.md](docs/aqi-in-access.md) for session seeding, renewal,
+operator controls, verification, and recovery. `npm run aqi:probe` remains a
+public-source diagnostic.
 
 ## Winix Automation
 
@@ -335,7 +346,7 @@ npx wrangler d1 execute aqi_db --remote --file db/migrations/0002_aqi_in_outdoor
 Apply the purifier-status lookup index to existing databases (safe to re-run):
 
 ```bash
-npx wrangler d1 execute aqi_db --remote --file db/migrations/0003_winix_monitor_lookup_index.sql
+npx wrangler d1 execute aqi_db --remote --file db/migrations/0004_winix_monitor_lookup_index.sql
 ```
 
 This index lets `/latest` find a monitor's newest purifier log directly, including

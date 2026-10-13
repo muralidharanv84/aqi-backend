@@ -1,5 +1,10 @@
 export interface EnvBindings {
   DB: D1Database;
+  AQI_SESSION?: DurableObjectNamespace;
+  AQI_ADMIN_KEY?: string;
+  AQI_ALERT_EMAIL?: SendEmail;
+  AQI_ALERT_FROM?: string;
+  AQI_ALERT_TO?: string;
   WINIX_USERNAME?: string;
   WINIX_PASSWORD?: string;
   WINIX_MONITOR_DEVICE_ID?: string;

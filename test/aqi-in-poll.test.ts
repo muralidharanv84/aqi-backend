@@ -90,7 +90,7 @@ describe("outdoor polling", () => {
     expect(response.status).toBe(401);
   });
 
-  it("dispatches the ten-minute cron even if delivery is late, and ignores upstream AQI", async () => {
+  it("dispatches the one-minute cron even if delivery is late, and ignores upstream AQI", async () => {
     const token = `e30.${btoa(JSON.stringify({ exp: nowMs / 1000 + 3600 })).replace(/=/g, "")}.fixture`;
     const request = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ siteStore: { token2: token } })))
@@ -105,6 +105,22 @@ describe("outdoor polling", () => {
     expect(request).toHaveBeenCalledTimes(2);
     expect(await env.DB.prepare("SELECT aqi_us FROM samples_raw").first("aqi_us")).toBe(12);
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM samples_hourly").first("n")).toBe(0);
+  });
+
+  it("stores authenticated temperature/humidity and protects them from public fallback", async () => {
+    const privateReading = reading();
+    privateReading.metrics.temp_c = 25.4;
+    privateReading.metrics.rh_pct = 64;
+    const service = { idFromName: vi.fn(), get: () => ({ fetch: async () => Response.json({ source: "private", reading: privateReading }) }) };
+    const privateEnv = { ...runtimeEnv, AQI_SESSION: service as unknown as DurableObjectNamespace };
+    await runScheduledJobs(privateEnv, nowMs, AQI_IN_CRON);
+    await runAqiInPoll(runtimeEnv, nowMs, async () => reading(99));
+    const row = await env.DB.prepare("SELECT * FROM samples_raw").first();
+    expect(row).toMatchObject({ pm25_ugm3: 3, temp_c: 25.4, rh_pct: 64 });
+    const latest = await handleRequest(new Request(`https://example.com/api/v1/devices/${AQI_IN_DEVICE_ID}/latest`), runtimeEnv);
+    expect(await latest.json()).toMatchObject({ metrics: { temp_c: 25.4, rh_pct: 64 } });
+    await aggregateCompletedHours(runtimeEnv, Date.parse("2026-09-15T04:05:00Z"));
+    expect(await env.DB.prepare("SELECT temp_avg, rh_avg FROM samples_hourly").first()).toMatchObject({ temp_avg: 25.4, rh_avg: 64 });
   });
 
   it("does not poll on the existing five-minute maintenance cron", async () => {

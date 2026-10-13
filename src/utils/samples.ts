@@ -13,8 +13,9 @@ export async function writeSample(
   deviceId: string,
   ts: number,
   metrics: Partial<Record<MetricField, number | null>>,
+  conflict: "replace" | "keep-existing" = "replace",
 ): Promise<void> {
-  await db.prepare(UPSERT_SQL)
+  await db.prepare(conflict === "keep-existing" ? UPSERT_SQL.split("ON CONFLICT")[0] + " ON CONFLICT(device_id, ts) DO NOTHING" : UPSERT_SQL)
     .bind(deviceId, ts, ...METRIC_FIELDS.map(field => metrics[field] ?? null))
     .run();
 }

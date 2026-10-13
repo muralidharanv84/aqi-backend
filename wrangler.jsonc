@@ -25,7 +25,16 @@
 			"remote": true
 		}
 	],
+	"durable_objects": { "bindings": [{ "name": "AQI_SESSION", "class_name": "AqiSession" }] },
+	"migrations": [{ "tag": "aqi-session-v1", "new_sqlite_classes": ["AqiSession"] }],
+	"send_email": [{
+		"name": "AQI_ALERT_EMAIL",
+		"allowed_destination_addresses": ["muralidharan@gmail.com"],
+		"allowed_sender_addresses": ["alerts@calorie-alerts.muralidharan.fyi"]
+	}],
 	"vars": {
+		"AQI_ALERT_FROM": "alerts@calorie-alerts.muralidharan.fyi",
+		"AQI_ALERT_TO": "muralidharan@gmail.com",
 		"WINIX_MONITOR_DEVICE_ID": "murali-living-room",
 		"WINIX_TARGET_DEVICE_IDS": "",
 		"WINIX_CONTROL_ENABLED": "true",
@@ -36,34 +45,6 @@
 		"WINIX_DRY_RUN": "false"
 	},
 	"triggers": {
-		"crons": ["*/5 * * * *", "*/10 * * * *"]
+		"crons": ["*/5 * * * *", "* * * * *"]
 	}
-	/**
-	 * Smart Placement
-	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-	 */
-	// "placement": {  "mode": "smart" }
-	/**
-	 * Bindings
-	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
-	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-	 */
-	/**
-	 * Environment Variables
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-	 * Note: Use secrets to store sensitive data.
-	 * https://developers.cloudflare.com/workers/configuration/secrets/
-	 */
-	// "vars": {  "MY_VARIABLE": "production_value" }
-	/**
-	 * Static Assets
-	 * https://developers.cloudflare.com/workers/static-assets/binding/
-	 */
-	// "assets": {  "directory": "./public/",  "binding": "ASSETS" }
-	/**
-	 * Service Bindings (communicate between multiple Workers)
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-	 */
-	// "services": [  {   "binding": "MY_SERVICE",   "service": "my-service"  } ]
 }

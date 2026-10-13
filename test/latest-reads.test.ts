@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { env } from "cloudflare:test";
 import { handleLatest } from "../src/routes/latest";
-import migration from "../db/migrations/0003_winix_monitor_lookup_index.sql?raw";
+import migration from "../db/migrations/0004_winix_monitor_lookup_index.sql?raw";
 import schema from "../db/schema.sql?raw";
 import { insertDevice, insertSample, resetDb } from "./utils/db";
 

@@ -1,5 +1,269 @@
 # Programmatic access to the Muthanallur AQI monitor
 
+## Current integration — October 2026
+
+`* * * * *` polls authenticated device data through the `AqiSession` Durable
+Object named `bellezea-outdoor`. Its storage holds the account bearer token and
+rotation/incident state; no token is written to D1, source code, logs, or API
+responses. Cloudflare protects Durable Object storage at rest. Operators with
+account access or the `AQI_ADMIN_KEY` can administer the session.
+
+The poller stores PM2.5, PM10, noise, TVOC, device temperature (`temp_c`), humidity
+(`rh_pct`), and the existing locally calculated US AQI. Existing raw/hourly
+schemas and APIs already support temperature/humidity; no new D1 migration is
+needed. Source times are parsed explicitly as IST, including AM/PM, before UTC
+minute bucketing. Invalid values/units, another serial, and future times fail
+validation. Private data must be online and at most five minutes old.
+
+Renewal runs daily, or halfway to expiry for shorter-lived credentials. The
+single object serializes reads, seeding and refresh. Before requesting refresh
+it durably records a pending rotation. After a successful response it saves the
+replacement before making another request. A lost response or interrupted
+rotation requires reseeding rather than replaying a potentially revoked token.
+AQI's cumulative session-age limit is undocumented; failures are handled by
+fallback and reminders rather than a promise of indefinite session validity.
+
+On private-source failure the public reader runs immediately, then at most every
+ten minutes. Public readings retain their original timestamps and thirty-minute
+freshness limit. Fallback only inserts missing source-minute rows, so it cannot
+remove temperature/humidity or replace an authenticated reading from the same
+minute. No weather temperature/humidity is substituted for device measurements.
+
+Authentication failures lasting fifteen minutes and at least three checks send
+one email to `muralidharan@gmail.com` from the existing verified alert sender
+`alerts@calorie-alerts.muralidharan.fyi`. Reminders repeat at most once per IST day
+and no sooner than 24 hours after the previous successful send. Success clears
+the incident; the daily limit remains across recovery/re-failure. The send is
+reserved before delivery to prevent duplicates after an ambiguous mail failure;
+an unsuccessful send is logged and retried on the next eligible day. HTTP 429,
+5xx, stale readings and other transport/data problems alone are not auth failures.
+
+### Operator setup and recovery
+
+Set a strong random Worker secret with `wrangler secret put AQI_ADMIN_KEY`.
+The endpoints below require `Authorization: Bearer <AQI_ADMIN_KEY>`, return
+`Cache-Control: no-store`, and never return account credentials. Keep operator
+keys and account-token files private and outside Git. Rotating the operator key
+does not reset the Durable Object's account token.
+
+```bash
+node scripts/aqi-admin.mjs status --key-file /private/path/operator-key
+node scripts/aqi-admin.mjs seed --key-file /private/path/operator-key --token-file /private/path/aqi-session.json
+node scripts/aqi-admin.mjs refresh --key-file /private/path/operator-key
+node scripts/aqi-admin.mjs poll --key-file /private/path/operator-key
+node scripts/aqi-admin.mjs verify-fallback --key-file /private/path/operator-key
+node scripts/aqi-admin.mjs test-email --key-file /private/path/operator-key
+```
+
+The seed file is JSON with a `token` property containing a current account JWT
+obtained through the owner's signed-in AQI session. Seed validates device access
+before replacing any working session. Delete the temporary seed file afterward.
+The first backend refresh invalidates the browser token used to seed it: sign
+back into the dashboard with Google afterward so browser and backend use separate
+sessions. No Google credentials or Google refresh tokens are required.
+
+`GET /internal/aqi/status` exposes sanitized session/incident metadata.
+`POST /internal/aqi/session`, `/refresh`, `/poll`, `/test-email`, and
+`/verify-fallback` are the corresponding maintenance actions. Fallback verification
+uses a separate unseeded object and deletes its state afterward; it never changes
+the production token or writes a simulated failure into production samples.
+The test-email action sends an explicitly labeled delivery test, not an outage
+notification. Admin CORS allows only the AQI dashboard origin, and actual requests
+still require the operator key. Public data routes retain their existing CORS.
+
+The `aqi-session-v1` Wrangler migration creates the SQLite-backed Durable Object
+namespace. The five-minute aggregation/Winix cron is unchanged.
+
+### Production verification — 13 October 2026
+
+Worker version `9a913602-8a22-4c4f-8c99-9a81188c128a` was deployed with
+the account session seeded and refreshed from Cloudflare. The replacement token
+was persisted and successfully used for subsequent device reads. Signing back
+into Chrome with Google did not invalidate the backend's separate session.
+
+The live latest API returned PM2.5 51, PM10 65, noise 55, TVOC 8.396,
+local US AQI 139, temperature 26.2°C and humidity 58% for source minute
+`2026-10-13T04:25:00Z`. The isolated missing-authentication check returned the
+public snapshot with its original `04:11:24Z` timestamp. The labeled email
+delivery test was received in the configured Gmail inbox at `04:25:46Z`.
+
+All 128 repository tests pass, together with TypeScript and deployment dry-run
+checks. Tests cover scheduled renewal, durable rotation/restart behavior,
+authentication fallback, daily reminder limits and recovery, parsing, admin
+authorization, and temperature/humidity through raw/hourly storage APIs.
+
+## Investigation history
+
+The following sections record the investigation and earlier public integration;
+the current deployed design is described above.
+
+## Authenticated real-time investigation — 13 October 2026
+
+The owner's signed-in Chrome dashboard exposes fresher data for the same device.
+At this stage the investigation confirmed browser access while production still
+used the public client. Deployment and credential setup subsequently followed
+the current integration described above. No account token or password was saved
+to the repository.
+
+Observed request on the [device dashboard](https://dash.aqi.in/devices/8CBFEA3754B4):
+
+```text
+GET https://airquality.aqi.in/api/v1/GetAllUserDevices
+Authorization: bearer <account-token>
+```
+
+It returned HTTP 200, `status: 1`, and a `data` array containing
+`serialNo: "8CBFEA3754B4"`, `isOnline: 1`, `device_timezone: "Asia/Kolkata"`,
+`last_updated: "2026-10-13 09:06:19 AM"`, and `timeago: "14 seconds ago "`.
+The response's HTTP Date was `2026-10-13T03:36:33Z`, consistent with the
+device timestamp being IST wall time. Unlike the public endpoint's `updatedAt`,
+this timestamp has no UTC offset: convert it explicitly using the device timezone,
+including correct AM/PM handling. Do not parse it in the Worker's local timezone
+or use the relative `timeago` string as the sample timestamp.
+
+Each entry in `realtime` has `sensorid`, `sensorname`, `sensorvalue`, and `unit`:
+
+| Sensor ID | Metric | Observed value |
+| --- | --- | --- |
+| 3 | PM2.5, µg/m³ | 62 |
+| 4 | PM10, µg/m³ | 76 |
+| 5 | PM1, µg/m³ | 35 |
+| 11 | Device temperature, °C | 25.4 |
+| 12 | Device humidity, % | 64 |
+| 13 | Noise, dB | 50 |
+| 18 | TVOC, ppm | 34.374 |
+
+For comparison, `npm run aqi:probe` at `2026-10-13T03:37:49.747Z` returned
+public `observedAt: "2026-10-13T03:21:23.704Z"`: about 16 minutes old.
+Later reloads of the signed-in Real Time table showed changed values and ages
+of 28 seconds and 14 seconds. This establishes fresher, changing readings,
+but does not establish an exact device upload interval or an API service guarantee.
+
+The dashboard's public JavaScript asset
+`/_next/static/chunks/7577-239243ede56c6068.js` also defines a narrower request:
+
+```text
+GET https://airquality.aqi.in/api/v1/GetSingleUserDevicesDetails
+Authorization: bearer <account-token>
+serialno: 8CBFEA3754B4
+```
+
+That single-device route was identified in source, not tested during this
+investigation. The observed dashboard request used `GetAllUserDevices`.
+
+The account JWT's expiry claims indicate a 14-day lifetime: issued
+13 October 2026 at 08:59:54 IST, expiring 27 October 2026 at 08:59:54 IST.
+These are decoded claims, not a promise that the session cannot be revoked earlier.
+The sign-in page calls a Next.js server action. The follow-up below establishes
+a direct API renewal route; a copied browser token alone, without renewal and
+durable replacement-token storage, is insufficient for long-term operation.
+
+### Renewal and public-token follow-up
+
+Further investigation on the same day found a working renewal route:
+
+```text
+POST https://airquality.aqi.in/api/v1/refresh
+Authorization: bearer <current-token>
+```
+
+Test results:
+
+| Credential / request | Result |
+| --- | --- |
+| Public `siteStore.token2` → `GetSingleUserDevicesDetails` for this serial | HTTP 200, `status: 0`, `Token is Invalid` |
+| Public `siteStore.token2` → `GetAllUserDevices` | HTTP 200, `status: 0`, `Token is Invalid` |
+| Public `siteStore.token` → `GetSingleUserDevicesDetails` for this serial | HTTP 200, `status: 0`, `No device found`, empty data |
+| Public `siteStore.token` → `POST /refresh` | HTTP 200 with a replacement `token`, `token_type: bearer`, and `token_validity: 120` |
+| Original public `siteStore.token` after renewal → device request | `Token is Invalid` |
+
+The login page publishes **two different visitor tokens**. `token2` is the
+public-location API credential used by this repository; `token` is issued by
+the `airquality.aqi.in` authentication service. Neither retrieved this device's
+private data in these tests. Check the JSON status even when HTTP is 200.
+
+The visitor account's refresh response advertised `token_validity: 120`.
+Do not reuse the published visitor token for additional renewal experiments:
+refresh invalidates the input token. The current public-location integration
+uses the separate `token2` credential, which was not refreshed.
+
+**Account renewal was then verified successfully.** The owner's original token
+had issuer `http://airquality.aqi.in/api/v1/SignInWithGoogle`. Passing it to
+`POST /refresh` returned a new token with `token_validity: 40320` (28 days), and
+that replacement successfully fetched this exact device using
+`GetSingleUserDevicesDetails`. Refreshing the replacement a second time also
+succeeded; the latest token fetched the device while its predecessor returned
+`status: 0, msg: "Token is Invalid"`.
+
+Sanitized second-renewal results:
+
+```json
+{
+  "refreshHttp": 200,
+  "validityMinutes": 40320,
+  "iat": "2026-10-13T03:29:54.000Z",
+  "nbf": "2026-10-13T03:58:37.000Z",
+  "exp": "2026-11-10T03:58:37.000Z",
+  "deviceHttp": 200,
+  "deviceStatus": 1,
+  "deviceMatched": true,
+  "last_updated": "2026-10-13 09:28:20 AM"
+}
+```
+
+This establishes a working renewal chain for Google-created AQI sessions without
+a password or further Google OAuth exchange. It does **not** establish unlimited
+session longevity: refresh preserves the original `iat`, and the service's
+cumulative refresh window is undocumented. A backend should renew early (for
+example daily), inspect the actual JWT expiry, serialize refresh operations, and
+durably save each replacement token. A lost refresh response is significant
+because the input token may already be invalid; blindly retrying it is unsafe.
+Detect renewal failure explicitly and support reauthentication if AQI enforces
+a cumulative deadline or revokes the session.
+
+Rotating the original token invalidated the dashboard's existing browser session.
+The browser was subsequently signed back in with its existing Google session;
+both open device pages were restored. A backend should use its own seeded
+session, independent of the token retained by the interactive dashboard.
+The account-token test ran in Chrome; Cloudflare verification remains outstanding.
+
+The Google login client requests `openid email profile` and `access_type: offline`
+through AQI's own OAuth client. That alone does not establish that an AQI client
+receives a Google refresh token or can use one directly. Prefer AQI's bearer
+renewal endpoint, which worked for this account in the test above.
+
+The signed-in My Account page shows a disabled password field and no visible
+password-change control. The unauthenticated login page's **Forget Password?**
+flow offers an email OTP followed by password reset. Its public account client
+(`6702-b1d6a30ebf68d760.js`) uses:
+
+1. `POST /api/v1/forgot-password` with `email`.
+2. `POST /api/v1/verify-otp` with `email` and `otpcode`.
+3. `POST /api/v1/SetUserNewPassword` with `email` and `password`.
+
+The known `POST /api/v1/login` route, called without credentials, returned
+HTTP 400 requiring `email` and `password`. This establishes a direct password
+login API without dependence on the dashboard's Next.js action identifier.
+No OTP was requested and no password was set. Whether this reset flow enables
+password login for this Google-created account remains unverified; the account
+owner should complete any password creation in the website UI.
+
+Implementation plan at the time of investigation (now implemented above):
+
+- Implement the verified account-token renewal flow with protected durable token
+  storage, serialized rotation, and reauthentication handling; verify it from
+  Cloudflare before deployment.
+- Fetch the real-time device record every minute; match the exact serial number,
+  validate units and values, and convert the observation timestamp to UTC.
+- Preserve the existing local AQI calculation, source-minute deduplication,
+  and offline/stale checks. Use a tighter freshness limit for real-time data.
+- Define explicit handling for expired authentication and upstream errors;
+  any public fallback must retain its original, older observation timestamp.
+- Add parser, authentication-failure, timezone, cron, and D1 integration coverage
+  before switching the deployed source.
+
+## Existing public integration
+
 Verified on 15 September 2026 with Node and a **remote Cloudflare Worker preview**.
 
 ## Working approach
