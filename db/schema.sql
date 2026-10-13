@@ -112,6 +112,9 @@ CREATE INDEX IF NOT EXISTS idx_winix_control_log_run_ts
 CREATE INDEX IF NOT EXISTS idx_winix_control_log_status_run_ts
     ON winix_control_log(run_status, run_ts DESC);
 
+CREATE INDEX IF NOT EXISTS idx_winix_control_log_monitor_id
+    ON winix_control_log(monitor_device_id, id DESC);
+
 -- Worker-managed outdoor source; signed ingest is disabled with an empty key.
 INSERT INTO devices (device_id, secret_hash, timezone)
 VALUES ('bellezea-outdoor', '', 'Asia/Kolkata')

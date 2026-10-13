@@ -332,6 +332,16 @@ For an existing database, also apply the outdoor monitor migration once:
 npx wrangler d1 execute aqi_db --remote --file db/migrations/0002_aqi_in_outdoor.sql
 ```
 
+Apply the purifier-status lookup index to existing databases (safe to re-run):
+
+```bash
+npx wrangler d1 execute aqi_db --remote --file db/migrations/0003_winix_monitor_lookup_index.sql
+```
+
+This index lets `/latest` find a monitor's newest purifier log directly, including
+when no log exists. Without it, requests for the outdoor monitor scan the entire
+retained purifier log. Applying the index takes effect without a Worker redeploy.
+
 ```bash
 npm run deploy
 ```
