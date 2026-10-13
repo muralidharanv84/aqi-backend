@@ -87,6 +87,14 @@ local US AQI 139, temperature 26.2°C and humidity 58% for source minute
 public snapshot with its original `04:11:24Z` timestamp. The labeled email
 delivery test was received in the configured Gmail inbox at `04:25:46Z`.
 
+After cron propagation, automatic `* * * * *` events at `04:32:58Z` and
+`04:33:58Z` both completed successfully with no exceptions and logged
+`source: private`. D1 independently confirmed consecutive source-minute rows
+at `04:32:00Z` and `04:33:00Z`, with all seven metrics populated (including
+26.2°C and 57% RH). No manual poll was issued between these scheduled runs.
+Live temperature/humidity series returned HTTP 200; an unauthenticated admin
+status request returned HTTP 401. Session status reported zero auth failures.
+
 All 128 repository tests pass, together with TypeScript and deployment dry-run
 checks. Tests cover scheduled renewal, durable rotation/restart behavior,
 authentication fallback, daily reminder limits and recovery, parsing, admin
