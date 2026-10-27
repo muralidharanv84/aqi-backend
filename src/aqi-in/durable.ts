@@ -17,7 +17,8 @@ export class AqiSession {
   private tail: Promise<unknown> = Promise.resolve();
   private manager: AqiSessionManager;
   constructor(private ctx: DurableObjectState, private env: Env) {
-    this.manager = new AqiSessionManager(ctx.storage, (subject, body) => sendAqiEmail(env, subject, body));
+    this.manager = new AqiSessionManager(ctx.storage, (subject, body) => sendAqiEmail(env, subject, body), fetch,
+      { email: env.AQI_LOGIN_EMAIL, password: env.AQI_PASSWORD });
   }
   async fetch(request: Request): Promise<Response> {
     // Network awaits can interleave Durable Object events; explicitly serialize the entire operation.
@@ -31,6 +32,7 @@ export class AqiSession {
       if (path === "/read") return Response.json(await this.manager.read(Date.now()));
       if (path === "/status") return Response.json(await this.manager.status());
       if (path === "/refresh") return Response.json(await this.manager.refresh(Date.now()));
+      if (path === "/verify-login") return Response.json(await this.manager.verifyLogin(Date.now()));
       if (path === "/session") {
         const body = await request.json<{ token?: unknown }>();
         if (typeof body.token !== "string" || body.token.length > 8192) return Response.json({ error: "invalid_token_input" }, { status: 400 });

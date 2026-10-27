@@ -35,6 +35,7 @@
 	"vars": {
 		"AQI_ALERT_FROM": "alerts@calorie-alerts.muralidharan.fyi",
 		"AQI_ALERT_TO": "muralidharan@gmail.com",
+		"AQI_LOGIN_EMAIL": "muralidharan@gmail.com",
 		"WINIX_MONITOR_DEVICE_ID": "murali-living-room",
 		"WINIX_TARGET_DEVICE_IDS": "",
 		"WINIX_CONTROL_ENABLED": "true",

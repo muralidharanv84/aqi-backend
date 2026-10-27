@@ -22,7 +22,7 @@ export async function handleAqiAdmin(req: Request, env: Env): Promise<Response> 
   if (difference) return respond({ error: "unauthorized" }, 401);
   const action = new URL(req.url).pathname.slice("/internal/aqi/".length);
   if ((action === "status" && req.method !== "GET") || (action !== "status" && req.method !== "POST")) return respond({ error: "method_not_allowed" }, 405);
-  if (!["status", "session", "refresh", "poll", "test-email", "verify-fallback"].includes(action)) return respond({ error: "not_found" }, 404);
+  if (!["status", "session", "refresh", "poll", "test-email", "verify-fallback", "verify-login"].includes(action)) return respond({ error: "not_found" }, 404);
   if (action === "poll") {
     try { await runAqiInPoll(env); return respond({ ok: true }); }
     catch { return respond({ error: "poll_failed" }, 502); }

@@ -38,6 +38,40 @@ reserved before delivery to prevent duplicates after an ambiguous mail failure;
 an unsuccessful send is logged and retried on the next eligible day. HTTP 429,
 5xx, stale readings and other transport/data problems alone are not auth failures.
 
+### Renewal window and automatic password sign-in — 27 October 2026
+
+Production failed at the first daily renewal after 14 days (seeded 13 Oct 03:29Z,
+renewal refused from 27 Oct; authenticated rows stop at 04:58Z). Bearer refresh
+preserves the original sign-in `iat`, so AQI enforces a cumulative **14-day
+renewal window** even though each token is valid for 28 days. The auth alert
+email fired on time but Gmail filed it as spam; a Gmail filter now keeps
+`alerts@calorie-alerts.muralidharan.fyi` out of Spam.
+
+Changes:
+
+- A definite renewal refusal (HTTP 401/403 or a token-related `status: 0`)
+  no longer discards the token. The session sets `refreshClosed`, keeps using
+  the token until it expires, and stops retrying refresh. Uncertain refresh
+  outcomes still discard the token, as before.
+- When renewal is refused, the token is rejected, or no session exists, the
+  worker signs in with `POST /api/v1/login` (`{ email, password }`), which
+  starts a new session and a new 14-day window. The email is the
+  `AQI_LOGIN_EMAIL` var; the password is the `AQI_PASSWORD` Worker secret.
+  Attempts are reserved before sending and limited to one per 30 minutes.
+  The password is never logged, stored in Durable Object state, or returned.
+- If the session cannot be renewed and expires within 3 days, an
+  "expires soon" email is sent once per IST day. Auth-failure emails now
+  include the password sign-in error.
+- `node scripts/aqi-admin.mjs verify-login --key-file .dev.vars.admin-key`
+  signs in with the stored password and reads the device without changing
+  stored state. It returns only `loginOk`, `validityMinutes`, the device
+  timestamp, or an error code, plus response field names (no values) if
+  AQI answers in an unrecognized format.
+
+Password sign-in for this Google-created account was enabled by setting a
+password through **Forgot Password?** on 27 Oct 2026. Run `verify-login` after
+deploying to confirm AQI accepts it.
+
 ### Operator setup and recovery
 
 Set a strong random Worker secret with `wrangler secret put AQI_ADMIN_KEY`.

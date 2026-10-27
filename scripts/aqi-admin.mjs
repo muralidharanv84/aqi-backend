@@ -3,8 +3,8 @@
 import { readFile } from 'node:fs/promises';
 const [action, ...args] = process.argv.slice(2);
 const option = name => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
-if (!['status', 'seed', 'refresh', 'poll', 'test-email', 'verify-fallback'].includes(action)) {
-  throw new Error('Usage: aqi-admin.mjs status|seed|refresh|poll|test-email|verify-fallback --key-file PATH [--token-file PATH]');
+if (!['status', 'seed', 'refresh', 'poll', 'test-email', 'verify-fallback', 'verify-login'].includes(action)) {
+  throw new Error('Usage: aqi-admin.mjs status|seed|refresh|poll|test-email|verify-fallback|verify-login --key-file PATH [--token-file PATH]');
 }
 const keyFile = option('--key-file');
 const key = keyFile ? (await readFile(keyFile, 'utf8')).trim() : process.env.AQI_ADMIN_KEY;

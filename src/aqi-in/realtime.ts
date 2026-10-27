@@ -92,3 +92,56 @@ export function parseRealtime(data: any, now: number): AqiReading {
 export async function fetchRealtime(token: string, now: number, request: Fetch = fetch): Promise<AqiReading> {
   return parseRealtime(await api("GetSingleUserDevicesDetails", token, request), now);
 }
+
+/** Thrown when login answers with a shape we do not recognize. Carries field names only, never values. */
+export class AqiLoginShapeError extends AqiUpstreamError {
+  constructor(public readonly fields: string[]) { super("login_unexpected_response"); }
+}
+/** AQI refused the sign-in. `detail` is AQI's own message with emails and tokens removed, for operator diagnosis. */
+export class AqiLoginRejected extends AqiAuthError {
+  constructor(code: string, public readonly httpStatus: number, public readonly detail: string,
+    public readonly fields: string[]) { super(code); }
+}
+
+const JWT_SHAPE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const sanitize = (text: unknown) => String(text ?? "")
+  .replace(/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[token]")
+  .replace(/[^\s@"']+@[^\s@"']+/g, "[email]").slice(0, 160);
+function rejected(data: any, httpStatus: number): AqiLoginRejected {
+  const msg = data?.msg ?? data?.message ?? data?.error ?? "";
+  const errors = data?.errors && typeof data.errors === "object" ? data.errors : {};
+  const detail = sanitize(typeof msg === "string" ? msg : JSON.stringify(msg)) ||
+    sanitize(Object.values(errors).flat().join(" "));
+  const code = /pass ?key/i.test(detail) ? "login_passkey_required" : "login_rejected";
+  return new AqiLoginRejected(code, httpStatus, detail, Object.keys(errors).slice(0, 20));
+}
+
+/**
+ * Email/password sign-in for an AQI account. Starts a brand-new session, so it also resets
+ * the 14-day renewal window that bearer refresh cannot extend. Never logs or returns the password.
+ */
+export async function login(email: string, password: string, now: number, request: Fetch = fetch): Promise<string> {
+  let response: Response;
+  try {
+    response = await request(HOST + "login", {
+      method: "POST", redirect: "manual", signal: AbortSignal.timeout(12_000),
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+  } catch { throw new AqiUpstreamError("aqi_network_failure"); }
+  const rejection = [400, 401, 403, 422].includes(response.status);
+  if (!response.ok && !rejection) { await response.body?.cancel(); throw new AqiUpstreamError(`aqi_http_${response.status}`); }
+  let data: any;
+  try { data = response.body ? JSON.parse(await readBounded(response)) : null; }
+  catch { if (rejection) throw rejected(null, response.status); throw new AqiUpstreamError("aqi_invalid_response"); }
+  if (rejection) throw rejected(data, response.status);
+  const candidates = [data?.token, data?.access_token, data?.data?.token, data?.data?.access_token, data?.data?.user?.token];
+  const token = candidates.find((t): t is string => typeof t === "string" && JWT_SHAPE.test(t));
+  if (!token) {
+    if (data?.status === 0 || data?.status === false || data?.success === false) throw rejected(data, response.status);
+    const fields = Object.keys(data ?? {}).concat(Object.keys(data?.data ?? {}).map(k => `data.${k}`));
+    throw new AqiLoginShapeError(fields.slice(0, 30));
+  }
+  if (tokenExpiry(token) <= now + 60_000) throw new AqiAuthError("login_invalid_response");
+  return token;
+}

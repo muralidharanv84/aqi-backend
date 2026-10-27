@@ -2,6 +2,8 @@ export interface EnvBindings {
   DB: D1Database;
   AQI_SESSION?: DurableObjectNamespace;
   AQI_ADMIN_KEY?: string;
+  AQI_LOGIN_EMAIL?: string;
+  AQI_PASSWORD?: string;
   AQI_ALERT_EMAIL?: SendEmail;
   AQI_ALERT_FROM?: string;
   AQI_ALERT_TO?: string;
